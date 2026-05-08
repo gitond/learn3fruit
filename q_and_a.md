@@ -45,6 +45,28 @@ As to where to get pre-existing data from: Below are a few links:
 
 ## 3. Where to find *Tensorflow* compatible *SSD + MobileNet-v2* implementation (use pre-existing implementation from github/huggingface/some pre-existing library/some pre-existing model collection; remember: may be pre-trained, important to know what it's pre-trained on)
 
+I found three ways to retrain a pre-trained *SSD + MobileNet-v2* implementation:
+
+**Plan 1 — MediaPipe Model Maker (primary)**
+- Source: `mediapipe-model-maker` pip library (Google, actively maintained)
+- Model: SSD + MobileNet v2, 256×256 or 320×320 input
+- Pretrained on: COCO 2017 (detection head) + ImageNet (MobileNet v2 backbone)
+- Browser runtime: `@mediapipe/tasks-vision` (npm), loads `.tflite` export
+- [mediapipe-model-maker object detection docs](https://ai.google.dev/edge/mediapipe/solutions/customization/object_detector)
+
+**Plan 2 — PyTorch SSD (secondary)**
+- Source: `qfgaohao/pytorch-ssd` on GitHub, pretrained weights included
+- Model: SSD + MobileNet v2
+- Pretrained on: COCO 2017 (exact checkpoint TBC from repo README at implementation time)
+- Browser runtime: `onnxruntime-web` (npm), loads `.onnx` export
+- [qfgaohao/pytorch-ssd](https://github.com/qfgaohao/pytorch-ssd)
+
+**Plan 3 — TF Object Detection API (fallback)**
+- Source: TF2 Detection Model Zoo (`ssd_mobilenet_v2_320x320_coco17_tpu-8`)
+- Pretrained on: COCO 2017
+- Browser runtime: `@tensorflow/tfjs` (npm), loads TF.js graph model converted via `tensorflowjs_converter`
+- [TF2 Detection Model Zoo](https://github.com/tensorflow/models/blob/master/research/object_detection/g3doc/tf2_detection_zoo.md)
+
 ---
 
 ## 4. Object detection to recipe step recognition. How do we do this exactly?
