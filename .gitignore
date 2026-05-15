@@ -1,1 +1,3 @@
 q_and_a_sources/
+data_and_training/data/VOC*
++data_and_training/models/
