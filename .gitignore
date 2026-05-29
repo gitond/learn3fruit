@@ -1,3 +1,7 @@
 q_and_a_sources/
 data_and_training/data/VOC*
-+data_and_training/models/
+data_and_training/models/
+data_and_training/devtools/oidv7-class-descriptions-boxable.csv
+data_and_training/devtools/oidv6-train-annotations-bbox.csv
+data_and_training/devtools/validation-annotations-bbox.csv
+data_and_training/devtools/downloader.py
