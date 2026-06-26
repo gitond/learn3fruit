@@ -1,73 +1,75 @@
-Okay so here's briefly what the next steps are:
+Coco overlap check:
 
- 1. Download `mediapipe_model_maker` and the already pretrained `MOBILENET_V2` model they have. Try to run inference with some test image. Here's how inference should work:
-    - You cannot directly run inference on `mediapipe_model_maker`
-    - model needs to be trained & exported first
-    - "But we want to access the pre-trained weights to test the model working before we do a real training process"
-    - Probably best to just run a "dummy training process" with a dummy dataset
-    - 2 images, VOC format, basically any content
-    - basically won't affect the pre trained weights
-    - basically runs instantly
-    - export to `.tflite`, test using `mediapipe` `ObjectDetector`
+ - if an image is included in the COCO dataset, we don't want it in our dataset
 
-Check out: input format, output format. Successful if: inference runs. So nn produces an output where an object is succesfully detected. Since this nn is pretrained with coco it should be able to detect any object from a coco class. Theoretically the input image could be any image that has such an object.
+Filtering:
 
- 2. The data gathering and preprocessing stage stage. According to `q_and_a.md` we want to gather 350 images per category. Data categories are listed at: **`README.md` -> Implementation stages -> Stage 1: Data Gathering -> Data categories**. A single image may belong to multiple categories (if an image has an apple and a knife in it is considered both an "apple" image and a "knife" image. Let there only be one image with both an apple and a knife. In this case:
-    - there are a total of 350 apple images. $|Apple| = 350$
-    - there are a total of 350 knife images. $|Knife| = 350$
-    - there is a 1 image overlap between apple and knife $|Apple \cap Knife| = 1$
-    - so the total amount of images is $|Apple \cup Knife| = |Apple|+|Knife|-|Apple \cap Knife| = 699$
+ - oiv7 and COCO both use flickr images
+ - images in both datasets have a flickr url
+ - Use for filtering
 
-Data displaying tools have to be developed to:
+Todo:
 
-   - make sure that for any given category $c_i, |c_i| = 350$ even when $|c_1 \ cup c_2 \cup ... \cup c_n| < 350n$
-      - Remember: $|c_1 \ cup c_2 \cup ... \cup c_n| < 350n$ is a good thing. Images with multiple categories ensure that the tracking works with objects from mulriple categories at a time!
-    - to render the images together with the bounding boxes so that we can quickly visually determine whether: 
-      - Our raw data is correct (no problems with data quality etc)
-      - Our output is all right
+ 1. Update `data_and_training/devtools/SOURCES.md`
 
-Data preprocessing means that all data gets converted to a format that our nn can use as a learning input. `mediapipe_model_maker` uses something called the **PASCAL VOC format** where the dataset file structure is set up like this:
- 
+`data_and_training/devtools/validation-images-with-rotation.csv`: from https://storage.googleapis.com/openimages/2018_04/validation/validation-images-with-rotation.csv: has oiv7 val metadata. Format:
+
 ```
-<dataset_dir>/
-  data/
-    <file0>.<jpg/jpeg>
-    ...
-  Annotations/
-    <file0>.xml
-    ...
+ImageID,Subset,OriginalURL,OriginalLandingURL,License,AuthorProfileURL,Author,Title,OriginalSize,OriginalMD5,Thumbnail300KURL,Rotation
+fe600639ac5f36c1,validation,https://farm2.staticflickr.com/5612/15340259497_dd0f22ebf2_o.jpg,https://www.flickr.com/photos/118815643@N04/15340259497,https://creativecommons.org/licenses/by/2.0/,https://www.flickr.com/people/118815643@N04/,LabHacker CD,_GUT6674,242145,0jBpbNION09+r02xkTIBcA==,https://c8.staticflickr.com/6/5612/15340259497_6b4323bab9_z.jpg,
 ```
 
-And annotation datafiles (`<file0>.xml`) have the following structure:
+https://storage.googleapis.com/openimages/2018_04/train/train-images-boxable-with-rotation.csv has oiv7 train metadata in same format. undownloaded. Download when starting to use train set
 
-```xml
-<annotation>
-  <filename>file0.jpg</filename>
-  <object>
-    <name>kangaroo</name>
-    <bndbox>
-      <xmin>233</xmin>
-      <ymin>89</ymin>
-      <xmax>386</xmax>
-      <ymax>262</ymax>
-    </bndbox>
-  </object>
-  <object>
-    ...
-  </object>
-  ...
-</annotation>
+`data_and_training/devtools/instances_val2017.json` has COCO2017 metadata in a very annoying very large 1 line json. Exploration: `jq 'keys' data_and_training/devtools/instances_val2017.json` prints:
+
+```json
+[
+  "annotations",
+  "categories",
+  "images",
+  "info",
+  "licenses"
+]
 ```
 
-We also need a separate train and val set for training. From the gathered images, we probably want 298 train images and 52 val images.
+`jq '.images | .[:3]' data_and_training/devtools/instances_val2017.json` prints:
 
-> we maintained an 85% of the generated images for pretraining and reserved the remaining 15% for validation.
+```json
+[
+  {
+    "license": 4,
+    "file_name": "000000397133.jpg",
+    "coco_url": "http://images.cocodataset.org/val2017/000000397133.jpg",
+    "height": 427,
+    "width": 640,
+    "date_captured": "2013-11-14 17:02:52",
+    "flickr_url": "http://farm7.staticflickr.com/6116/6255196340_da26cf2c9e_z.jpg",
+    "id": 397133
+  },
+  {
+    "license": 1,
+    "file_name": "000000037777.jpg",
+    "coco_url": "http://images.cocodataset.org/val2017/000000037777.jpg",
+    "height": 230,
+    "width": 352,
+    "date_captured": "2013-11-14 20:55:31",
+    "flickr_url": "http://farm9.staticflickr.com/8429/7839199426_f6d48aa585_z.jpg",
+    "id": 37777
+  },
+  {
+    "license": 4,
+    "file_name": "000000252219.jpg",
+    "coco_url": "http://images.cocodataset.org/val2017/000000252219.jpg",
+    "height": 428,
+    "width": 640,
+    "date_captured": "2013-11-14 22:32:02",
+    "flickr_url": "http://farm4.staticflickr.com/3446/3232237447_13d84bd0a1_z.jpg",
+    "id": 252219
+  }
+]
+```
 
-Paiano et al., *Transfer learning with generative models for object detection on limited datasets*, University of Florence, arXiv:2402.06784 · [arXiv](https://arxiv.org/html/2402.06784v1) 
-
-We want to set up `data_and_training/data_display`, `data_and_training/data_download`, `data_and_training/data_pipeline.sh`, `data_and_training/data_preprocess` to automatize as much as we can from this process.
-
- 3. Attempt training (fine-tuning) with `mediapipe_model_maker`. Make sure trained model inference works at an acceptable quality
-    - works no problem? good. move on to browser inference testing & AR-app development
-    - buggy? try to debug as best as you can
-    - doesn't work? plan 2: `qfgaohao/pytorch-ssd` has a pytorch implementation of *SSD + MobileNet-v2* (plus pretrained checkpoints). try what you can achieve with this. Note: may need to redo initial inference tests & data pipeline.
+ 2. Write coco overlap checker
+ 3. Test coco overlap checker
+ 4. Integrate coco overlap checker into `data_and_training/devtools/prep_data_dl.sh`
