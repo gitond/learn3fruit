@@ -5,6 +5,7 @@ data_and_training/data/VOC*
 data_and_training/devtools/*-with-rotation.csv
 data_and_training/devtools/downloader.py
 data_and_training/devtools/instances_*.json
+data_and_training/devtools/OID_COCO_overlaps.csv
 data_and_training/devtools/oidv7-class-descriptions-boxable.csv
 data_and_training/devtools/oidv6-train-annotations-bbox.csv
 data_and_training/devtools/validation-annotations-bbox.csv

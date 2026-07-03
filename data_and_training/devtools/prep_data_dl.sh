@@ -13,6 +13,7 @@ Reads from the same directory as this script:
   oidv7-class-descriptions-boxable.csv  (required)
   validation-annotations-bbox.csv       (required; validation split)
   oidv6-train-annotations-bbox.csv      (optional; used to top up if validation is short)
+  OID_COCO_overlaps.csv                 (optional; when present, excludes COCO 2017 overlap images)
 
 Outputs to output_dir:
   dl<timestamp>.txt          one "split/image_id" per line, ready for downloader.py
@@ -33,6 +34,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CLASS_CSV="$SCRIPT_DIR/oidv7-class-descriptions-boxable.csv"
 VAL_CSV="$SCRIPT_DIR/validation-annotations-bbox.csv"
 TRAIN_CSV="$SCRIPT_DIR/oidv6-train-annotations-bbox.csv"
+COCO_CSV="$SCRIPT_DIR/OID_COCO_overlaps.csv"
 
 [[ -f "$CLASS_CSV" ]] || { echo "Error: missing $CLASS_CSV" >&2; exit 1; }
 [[ -f "$VAL_CSV" ]]   || { echo "Error: missing $VAL_CSV" >&2; exit 1; }
@@ -45,7 +47,12 @@ MATCHLOG_FILE="$OUTPUT_DIR/dl${TIMESTAMP}matchlog.txt"
 # Temp files cleaned up on exit
 TMP_PAIRS="$(mktemp)"
 TMP_EXCL="$(mktemp)"
-trap 'rm -f "$TMP_PAIRS" "$TMP_EXCL"' EXIT
+TMP_COCO="$(mktemp)"
+trap 'rm -f "$TMP_PAIRS" "$TMP_EXCL" "$TMP_COCO"' EXIT
+
+# Populate COCO exclusion file: one open_images_id per line.
+# Passed as a real file to awk to avoid shell argument size limits (~9874 entries).
+[[ -f "$COCO_CSV" ]] && awk -F',' 'NR>1{gsub(/\r$/,""); print $2}' "$COCO_CSV" > "$TMP_COCO"
 
 > "$MATCHLOG_FILE"
 first_class=true
@@ -70,10 +77,12 @@ for raw_name in "${RAW_NAMES[@]}"; do
     # --- Collect unique ImageIDs from validation split ---
     # Dedup rule: (ImageID, LabelName) counted once — equivalent to unique ImageID
     # since we're already filtering by a single label.
-    mapfile -t ids_val < <(awk -F',' -v lbl="$label_code" -v lim="$COUNT" '
-        NR > 1 { gsub(/\r$/, "") }
-        NR > 1 && $3 == lbl && !seen[$1]++ && ++n <= lim { print $1 }
-    ' "$VAL_CSV")
+    mapfile -t ids_val < <(awk -F',' -v lbl="$label_code" -v lim="$COUNT" -v coco_file="$TMP_COCO" '
+        FILENAME == coco_file { coco[$1]=1; next }
+        FNR == 1 { next }
+        { gsub(/\r$/, "") }
+        $3 == lbl && !coco[$1] && !seen[$1]++ && ++n <= lim { print $1 }
+    ' "$TMP_COCO" "$VAL_CSV")
 
     # --- Supplement from train split if validation didn't reach COUNT ---
     ids_train=()
@@ -87,11 +96,12 @@ for raw_name in "${RAW_NAMES[@]}"; do
             > "$TMP_EXCL"
         fi
         mapfile -t ids_train < <(
-            awk -F',' -v lbl="$label_code" -v lim="$need" -v excf="$TMP_EXCL" '
-                FILENAME == excf { excl[$1] = 1; next }
+            awk -F',' -v lbl="$label_code" -v lim="$need" -v excf="$TMP_EXCL" -v coco_file="$TMP_COCO" '
+                FILENAME == coco_file { coco[$1]=1; next }
+                FILENAME == excf { excl[$1]=1; next }
                 { gsub(/\r$/, "") }
-                $3 == lbl && !excl[$1] && !seen[$1]++ && ++n <= lim { print $1 }
-            ' "$TMP_EXCL" "$TRAIN_CSV"
+                $3 == lbl && !coco[$1] && !excl[$1] && !seen[$1]++ && ++n <= lim { print $1 }
+            ' "$TMP_COCO" "$TMP_EXCL" "$TRAIN_CSV"
         )
     fi
 

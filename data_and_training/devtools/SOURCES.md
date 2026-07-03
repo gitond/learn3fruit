@@ -50,3 +50,16 @@ wget https://storage.googleapis.com/openimages/v5/validation-annotations-bbox.cs
 ```bash
 wget https://storage.googleapis.com/openimages/v6/oidv6-train-annotations-bbox.csv
 ```
+
+---
+
+## OID_COCO_overlaps.csv
+
+**Source:** https://storage.googleapis.com/openimages/v6/OID_COCO_overlaps.csv  
+**From:** Open Images V6/V7 download page (Google) — external file, not our code  
+**Why:** Lists every Open Images image that also appears in the COCO 2017 dataset (by Flickr photo ID). Used by `prep_data_dl.sh` to exclude these images from our dataset, since the pretrained MobileNet-V2 backbone was trained on COCO and training on the same images would leak data. Contains 9875 entries (header + 9874 overlap pairs).  
+**Format:** `coco_id,open_images_id` — `open_images_id` matches the `ImageID` column in the bbox annotation CSVs directly.
+
+```bash
+wget https://storage.googleapis.com/openimages/v6/OID_COCO_overlaps.csv
+```
