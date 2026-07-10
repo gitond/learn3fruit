@@ -107,9 +107,20 @@ for raw_name in "${RAW_NAMES[@]}"; do
 
     # --- Append to matchlog ---
     [[ "$first_class" == "true" ]] || printf '\n' >> "$MATCHLOG_FILE"
-    printf '%s\n' "$display_name" >> "$MATCHLOG_FILE"
-    [[ ${#ids_val[@]}   -gt 0 ]] && printf '%s\n' "${ids_val[@]}"   >> "$MATCHLOG_FILE"
-    [[ ${#ids_train[@]} -gt 0 ]] && printf '%s\n' "${ids_train[@]}" >> "$MATCHLOG_FILE"
+    n_val=${#ids_val[@]}
+    n_train=${#ids_train[@]}
+    if [[ $n_val -gt 0 && $n_train -gt 0 ]]; then
+        summary="${n_val} val, ${n_train} train"
+    elif [[ $n_val -gt 0 ]]; then
+        summary="${n_val} val"
+    elif [[ $n_train -gt 0 ]]; then
+        summary="${n_train} train"
+    else
+        summary="no images found"
+    fi
+    printf '%s: %s\n' "$display_name" "$summary" >> "$MATCHLOG_FILE"
+    [[ ${#ids_val[@]}   -gt 0 ]] && printf 'validation/%s\n' "${ids_val[@]}"   >> "$MATCHLOG_FILE"
+    [[ ${#ids_train[@]} -gt 0 ]] && printf 'train/%s\n'      "${ids_train[@]}" >> "$MATCHLOG_FILE"
     first_class=false
 
     # --- Accumulate split/id pairs for final deduplication pass ---

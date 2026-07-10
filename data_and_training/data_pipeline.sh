@@ -15,7 +15,8 @@
 #   downloader.py                         — official Open Images downloader (requires boto3, botocore, tqdm)
 #   gen_voc_annotations.sh                — generates Pascal VOC XML annotation files
 #   oidv7-class-descriptions-boxable.csv  — maps display names to OI label codes
-#   validation-annotations-bbox.csv       — bbox annotations (validation split, default)
+#   validation-annotations-bbox.csv       — bbox annotations (validation split)
+#   oidv6-train-annotations-bbox.csv      — bbox annotations (train split, optional; used when val is short)
 #
 # OUTPUT (data_and_training/data/<OUTPUT_NAME>/):
 #   ds/
@@ -60,7 +61,32 @@ python "$DEVTOOLS_DIR/downloader.py" "$dl_file" --download_folder "$DS_DIR/image
 # --- Step 3: Generate Pascal VOC annotation XMLs ---
 echo ""
 echo "=== [3/3] Generating VOC annotations ==="
-bash "$DEVTOOLS_DIR/gen_voc_annotations.sh" "$DS_DIR" "$DISPLAY_NAMES"
+VAL_CSV="$DEVTOOLS_DIR/validation-annotations-bbox.csv"
+TRAIN_CSV="$DEVTOOLS_DIR/oidv6-train-annotations-bbox.csv"
+TMP_STDERR="$(mktemp)"
+trap 'rm -f "$TMP_STDERR"' EXIT
+
+# Run each pass silently: per-image "no annotations" warnings are expected (each
+# pass only covers its own split).  Real errors (bad label codes, missing dirs)
+# are still forwarded.  The post-check below warns only for images that ended up
+# with no XML from either pass.
+bash "$DEVTOOLS_DIR/gen_voc_annotations.sh" "$DS_DIR" "$DISPLAY_NAMES" "$VAL_CSV" \
+    >/dev/null 2>"$TMP_STDERR"
+grep -v '^Warning: no annotations for' "$TMP_STDERR" >&2 || true
+
+if [[ -f "$TRAIN_CSV" ]]; then
+    bash "$DEVTOOLS_DIR/gen_voc_annotations.sh" "$DS_DIR" "$DISPLAY_NAMES" "$TRAIN_CSV" \
+        >/dev/null 2>"$TMP_STDERR"
+    grep -v '^Warning: no annotations for' "$TMP_STDERR" >&2 || true
+fi
+rm -f "$TMP_STDERR"
+
+for img in "$DS_DIR/images"/*.jpg "$DS_DIR/images"/*.jpeg; do
+    [[ -f "$img" ]] || continue
+    stem="$(basename "${img%.*}")"
+    [[ -f "$DS_DIR/Annotations/${stem}.xml" ]] || \
+        echo "Warning: no annotations for $(basename "$img") (not in val or train CSV)" >&2
+done
 
 # --- Summary ---
 n_images="$(find "$DS_DIR/images"      -maxdepth 1 \( -name '*.jpg' -o -name '*.jpeg' \) | wc -l)"

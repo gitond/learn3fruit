@@ -1,5 +1,7 @@
 q_and_a_sources/
 data_and_training/*/dl*.txt
+!data_and_training/data/l3fds/*/dl*.txt
+data_and_training/data/l3fds/ds
 data_and_training/data/oi7*
 data_and_training/data/VOC*
 data_and_training/devtools/*-with-rotation.csv
