@@ -1,0 +1,8 @@
+note on data quality: 
+
+on some pictures instances of detectable objects are not annotated, some categories are ignored or some instances are misannotated. We expect this to have a degrading effect on our nn's object detection capabilities. Examples:
+
+not every instance of "apple" tracked, "banana" in the background ignored: train/04a8c7a0509f0ef9
+
+apples or atleast "non-oranges" reported as oranges: 
+train/29fbb981cf20bc36

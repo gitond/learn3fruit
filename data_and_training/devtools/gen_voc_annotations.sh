@@ -85,6 +85,7 @@ awk -F',' \
     -v codes="${!CODE_TO_NAME[*]}" \
     -v mapping="$mapping" '
     BEGIN {
+        OFS="\t"
         n = split(ids, a, " ")
         for (i = 1; i <= n; i++) id_set[a[i]] = 1
         m = split(codes, b, " ")
@@ -128,7 +129,7 @@ for image_id in "${!IMAGE_FILES[@]}"; do
 
     # Build <object> blocks for this image, denormalizing bbox coordinates.
     # TMP_FILTERED columns: image_id display_name XMin XMax YMin YMax
-    xml_objects="$(awk -v id="$image_id" -v w="$width" -v h="$height" '
+    xml_objects="$(awk -F'\t' -v id="$image_id" -v w="$width" -v h="$height" '
         $1 == id {
             printf "  <object>\n    <name>%s</name>\n    <bndbox>\n      <xmin>%d</xmin>\n      <ymin>%d</ymin>\n      <xmax>%d</xmax>\n      <ymax>%d</ymax>\n    </bndbox>\n  </object>\n",
                 $2,
