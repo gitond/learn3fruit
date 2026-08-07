@@ -69,8 +69,28 @@ I found three ways to retrain a pre-trained *SSD + MobileNet-v2* implementation:
 
 ---
 
-## 4. Object detection to recipe step recognition. How do we do this exactly?
+## 4. Given a) a Nvidia Geforce GTX 1660 SUPER b) two Nvidia Geforce RTX 3090 GPUs    what kind of hyperparameters should we use?
+
+mediapipe let's me set learning rate, batch size, number of epochs, steps per epoch, checkpoints, cosine decay ([source](https://developers.google.com/edge/api/mediapipe/python/mediapipe_model_maker/object_detector/HParams)). Notably warmup is seemingly not supported.
+
+[Other people](https://arxiv.org/abs/2010.04427) used substantially lower lr than the mediapipe default, so we start experimenting with a 0.08 starting lr (we change it if we think this breaks the system) on 1660 super and 0.32 starting lr on dual 3090 (larger batches)
+
+[Park et al.](https://arxiv.org/abs/2010.04427) used a 32 batch size on a 24GB GPU, on our dual 3090 setup we have two of those so a batch size of 64 is applicable there. For our 1660 SUPER we start at 16, and if it OOMs (which it probably will) we move down to 8 which is the mediapipe default.
+
+We start at 30 epochs, but if the training loss still visibly reduces in the last steps we can move up to 60, 90, 120 epochs respectively
+
+We won't touch the `steps_per_epoch` parameter (even though our ds is still closer to 2000 images than 1500 even after the train-val-split)
+
+We use checkpointing (set `export_dir` to `data_and_training/models/ssd_plus_mobilenet_v2_l3f_TIMESTAMP/checkpoints`)
+
+`num_gpus` is 1 for our 1660 SUPER setup and 2 for our dual 3090 setup
+
+We use a standard cosine decay so `cosine_decay_epochs = epochs` (30, 60, 90, 120) and `cosine_decay_alpha = 0.0`, which means learning rate is dropped to $0.0$ over $epochs$ epochs [[]](https://www.tensorflow.org/api_docs/python/tf/keras/optimizers/schedules/CosineDecay), which is a standard practice which other machine learning approaches have used [[]](https://arxiv.org/abs/2111.09883)
 
 ---
 
-## 5. Precise browser app structure and specification still needs to be decided
+## 5. Object detection to recipe step recognition. How do we do this exactly?
+
+---
+
+## 6. Precise browser app structure and specification still needs to be decided
