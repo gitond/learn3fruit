@@ -105,12 +105,7 @@ BEGIN {
         if (n == 1) {
             t = 0
         } else {
-            t = duration * i / (n - 1)
-        }
-
-        # Avoid requesting a frame exactly at EOF.
-        if (t >= duration) {
-            t = duration - 0.001
+            t = duration * i / n
         }
 
         if (t < 0) {
@@ -133,6 +128,7 @@ while IFS=',' read -r FRAME_ID TIMESTAMP_SECONDS; do
     ffmpeg \
         -hide_banner \
         -loglevel error \
+        -nostdin \
         -i "$INPUT" \
         -ss "$TIMESTAMP_SECONDS" \
         -frames:v 1 \
@@ -159,7 +155,7 @@ while IFS=',' read -r FRAME_ID TIMESTAMP_SECONDS; do
         "$HUMAN_TIMESTAMP" \
         >> "$TIMESTAMP_FILE"
 
-    echo "Extracted frame_${FRAME_ID}.jpg @ ${HUMAN_TIMESTAMP}"
+    echo "Extracted ${FRAME_ID}.jpg @ ${HUMAN_TIMESTAMP}"
 done
 
 echo
