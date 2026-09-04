@@ -1,7 +1,7 @@
 data_and_training/*/dl*.txt
 !data_and_training/data/l3fds/*/dl*.txt
 data_and_training/data/l3fds/ds
-data_and_training/data/myvideotest/*_frames/*.jpg
+data_and_training/data/myvideotest/*_frames/images/
 data_and_training/data/myvideotest/*.mp4
 data_and_training/data/oi7*
 data_and_training/data/VOC*

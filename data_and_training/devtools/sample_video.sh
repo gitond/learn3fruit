@@ -21,11 +21,13 @@ set -euo pipefail
 #
 # Output is placed next to the input video:
 #   <video>_frames/
-#       uniform_0001.jpg
-#       ...
-#       hv_0001.jpg
-#       ...
-#       timestamps.csv
+#       images/
+#           uniform_0001.jpg
+#           ...
+#           hv_0001.jpg
+#           ...
+#       metadata/
+#           timestamps.csv
 
 INPUT="${1:?Usage: $0 VIDEO [NUMBER_OF_FRAMES]}"
 NUM_FRAMES="${2:-130}"
@@ -37,7 +39,7 @@ NUM_FRAMES="${2:-130}"
 #
 # START and END may be written as seconds or HH:MM:SS.
 # Intervals use [start, end) semantics:
-#   00:15-00:30 -> timestamps 15,16,...,29
+#   00:00:15-00:00:30 -> timestamps 15,16,...,29
 #
 # Leave empty for no high-value sampling.
 HV_INTERVALS=(
@@ -77,15 +79,17 @@ command -v awk >/dev/null 2>&1 || {
     exit 1
 }
 
-# Derive output directory from the input video.
+# Derive output directories from the input video.
 INPUT_DIR="$(dirname "$INPUT")"
 INPUT_FILENAME="$(basename "$INPUT")"
 INPUT_STEM="${INPUT_FILENAME%.*}"
 
 OUTPUT_DIR="${INPUT_DIR}/${INPUT_STEM}_frames"
-TIMESTAMP_FILE="${OUTPUT_DIR}/timestamps.csv"
+IMAGES_DIR="${OUTPUT_DIR}/images"
+METADATA_DIR="${OUTPUT_DIR}/metadata"
+TIMESTAMP_FILE="${METADATA_DIR}/timestamps.csv"
 
-mkdir -p "$OUTPUT_DIR"
+mkdir -p "$IMAGES_DIR" "$METADATA_DIR"
 
 # Get video duration in seconds.
 DURATION="$(
@@ -102,16 +106,16 @@ if [[ -z "$DURATION" || "$DURATION" == "N/A" ]]; then
     exit 1
 fi
 
-echo "Input:       $INPUT"
-echo "Duration:    ${DURATION}s"
-echo "Uniform:     $NUM_FRAMES frames"
+echo "Input:        $INPUT"
+echo "Duration:     ${DURATION}s"
+echo "Uniform:      $NUM_FRAMES frames"
 echo "HV intervals: ${#HV_INTERVALS[@]}"
-echo "Output:      $OUTPUT_DIR"
+echo "Output:       $OUTPUT_DIR"
 echo
 
 # Remove previous output from an earlier run.
-rm -f "$OUTPUT_DIR"/uniform_*.jpg
-rm -f "$OUTPUT_DIR"/hv_*.jpg
+rm -f "$IMAGES_DIR"/uniform_*.jpg
+rm -f "$IMAGES_DIR"/hv_*.jpg
 rm -f "$TIMESTAMP_FILE"
 
 # CSV header.
@@ -258,7 +262,7 @@ for ((i = 0; i < ${#SAMPLE_TIMESTAMPS[@]}; i++)); do
     METHOD="${SAMPLE_METHODS[$i]}"
     FRAME_ID="${TIMESTAMP_TO_ID[$TIMESTAMP_SECONDS]}"
 
-    OUTPUT_FILE="${OUTPUT_DIR}/${FRAME_ID}.jpg"
+    OUTPUT_FILE="${IMAGES_DIR}/${FRAME_ID}.jpg"
 
     # Timestamp-based frame extraction.
     #
@@ -300,5 +304,5 @@ done
 
 echo
 echo "Done."
-echo "Frames:     $OUTPUT_DIR"
+echo "Frames:     $IMAGES_DIR"
 echo "Timestamps: $TIMESTAMP_FILE"

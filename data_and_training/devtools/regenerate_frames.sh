@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
+
 set -euo pipefail
 
-INPUT_DIR="${1:?Usage: $0 DIRECTORY}"
+INPUT_DIR="${1:?Usage: $0 VIDEO_FRAMES_DIRECTORY VIDEO}"
+VIDEO="${2:?Usage: $0 VIDEO_FRAMES_DIRECTORY VIDEO}"
 
 if [[ ! -d "$INPUT_DIR" ]]; then
     echo "Error: directory not found: $INPUT_DIR" >&2
@@ -13,46 +15,31 @@ command -v ffmpeg >/dev/null 2>&1 || {
     exit 1
 }
 
-TIMESTAMP_FILE="${INPUT_DIR}/timestamps.csv"
+IMAGES_DIR="${INPUT_DIR}/images"
+METADATA_DIR="${INPUT_DIR}/metadata"
+TIMESTAMP_FILE="${METADATA_DIR}/timestamps.csv"
 
 if [[ ! -f "$TIMESTAMP_FILE" ]]; then
-    echo "Error: timestamps.csv not found in: $INPUT_DIR" >&2
+    echo "Error: timestamps.csv not found in: $METADATA_DIR" >&2
     exit 1
 fi
 
-# Find video files in the directory.
-VIDEO_FILES=()
-
-while IFS= read -r -d '' FILE; do
-    VIDEO_FILES+=("$FILE")
-done < <(
-    find "$INPUT_DIR" -maxdepth 1 -type f \
-        \( -iname '*.mp4' -o -iname '*.mov' -o -iname '*.mkv' \
-           -o -iname '*.avi' -o -iname '*.m4v' -o -iname '*.webm' \) \
-        -print0
-)
-
-if [[ "${#VIDEO_FILES[@]}" -eq 0 ]]; then
-    echo "Error: no video file found in: $INPUT_DIR" >&2
+if [[ ! -f "$VIDEO" ]]; then
+    echo "Error: video not found: $VIDEO" >&2
     exit 1
 fi
 
-if [[ "${#VIDEO_FILES[@]}" -gt 1 ]]; then
-    echo "Error: more than one video file found in: $INPUT_DIR" >&2
-    printf '  %s\n' "${VIDEO_FILES[@]}" >&2
-    echo "Please leave exactly one source video in the directory." >&2
-    exit 1
-fi
+mkdir -p "$IMAGES_DIR"
 
-VIDEO="${VIDEO_FILES[0]}"
-
-echo "Directory:  $INPUT_DIR"
-echo "Video:      $(basename "$VIDEO")"
-echo "Timestamps: $(basename "$TIMESTAMP_FILE")"
+echo "Frames directory: $INPUT_DIR"
+echo "Video:            $(basename "$VIDEO")"
+echo "Timestamps:       $TIMESTAMP_FILE"
+echo "Images:            $IMAGES_DIR"
 echo
 
 # Remove previously generated frames.
-rm -f "$INPUT_DIR"/frame_*.jpg
+rm -f "$IMAGES_DIR"/uniform_*.jpg
+rm -f "$IMAGES_DIR"/hv_*.jpg
 
 FRAME_COUNT=0
 
@@ -69,11 +56,12 @@ while IFS=',' read -r FRAME_ID TIMESTAMP_SECONDS _; do
         exit 1
     fi
 
-    OUTPUT_FILE="${INPUT_DIR}/${FRAME_ID}.jpg"
+    OUTPUT_FILE="${IMAGES_DIR}/${FRAME_ID}.jpg"
 
     ffmpeg \
         -hide_banner \
         -loglevel error \
+        -nostdin \
         -i "$VIDEO" \
         -ss "$TIMESTAMP_SECONDS" \
         -frames:v 1 \
@@ -89,4 +77,4 @@ done < "$TIMESTAMP_FILE"
 echo
 echo "Done."
 echo "Generated $FRAME_COUNT frames in:"
-echo "  $INPUT_DIR"
+echo "  $IMAGES_DIR"
