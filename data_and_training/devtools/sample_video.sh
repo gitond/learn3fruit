@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-# Generate uniformly distributed JPEG frames from a video.
+# Generate uniformly distributed and high-value JPEG frames from a video.
 #
 # Usage:
 #   ./data_and_training/devtools/sample_video.sh VIDEO [NUMBER_OF_FRAMES]
@@ -11,18 +11,45 @@ set -euo pipefail
 #   ./data_and_training/devtools/sample_video.sh \
 #       data_and_training/data/myvideotest/sample.mp4
 #
-# Default number of frames: 130
+# Default number of uniformly distributed frames: 130
+#
+# High-value intervals are sampled at exactly 1 FPS.
+# Interval semantics are [start, end): start is included, end is excluded.
+#
+# Edit HV_INTERVALS below to configure high-value intervals.
+# Leave it empty to disable high-value sampling.
 #
 # Output is placed next to the input video:
 #   <video>_frames/
-#       frame_0001.jpg
-#       frame_0002.jpg
+#       uniform_0001.jpg
 #       ...
-#       frame_0130.jpg
+#       hv_0001.jpg
+#       ...
 #       timestamps.csv
 
 INPUT="${1:?Usage: $0 VIDEO [NUMBER_OF_FRAMES]}"
 NUM_FRAMES="${2:-130}"
+
+# High-value intervals, sampled at exactly 1 FPS.
+#
+# Format:
+#   "START,END" "START,END" ...
+#
+# START and END may be written as seconds or HH:MM:SS.
+# Intervals use [start, end) semantics:
+#   00:15-00:30 -> timestamps 15,16,...,29
+#
+# Leave empty for no high-value sampling.
+HV_INTERVALS=(
+    "00:00:15,00:00:30"
+    "00:01:06,00:01:11"
+    "00:08:18,00:08:28"
+    "00:12:25,00:12:30"
+    "00:13:37,00:13:52"
+    "00:18:35,00:18:45"
+    "00:21:24,00:21:29"
+    "00:00:46,00:00:51"
+)
 
 if [[ ! -f "$INPUT" ]]; then
     echo "Error: video not found: $INPUT" >&2
@@ -77,46 +104,159 @@ fi
 
 echo "Input:       $INPUT"
 echo "Duration:    ${DURATION}s"
-echo "Frames:      $NUM_FRAMES"
+echo "Uniform:     $NUM_FRAMES frames"
+echo "HV intervals: ${#HV_INTERVALS[@]}"
 echo "Output:      $OUTPUT_DIR"
 echo
 
 # Remove previous output from an earlier run.
-rm -f "$OUTPUT_DIR"/frame_*.jpg
+rm -f "$OUTPUT_DIR"/uniform_*.jpg
+rm -f "$OUTPUT_DIR"/hv_*.jpg
 rm -f "$TIMESTAMP_FILE"
 
 # CSV header.
 printf 'frame_id,timestamp_seconds,timestamp\n' > "$TIMESTAMP_FILE"
 
-# Generate NUM_FRAMES timestamps uniformly across the video.
-#
-# The first frame is at t=0.
-# The last frame is placed just before EOF rather than exactly at EOF,
-# since requesting a frame at the exact duration can fail for some videos.
-#
-# This is timestamp-based rather than frame-number-based, so it does not
-# depend on the video being constant-frame-rate.
-awk \
-    -v duration="$DURATION" \
-    -v n="$NUM_FRAMES" '
-BEGIN {
-    for (i = 0; i < n; i++) {
+# Convert a timestamp written as seconds or HH:MM:SS[.mmm] to seconds.
+timestamp_to_seconds() {
+    local value="$1"
 
-        if (n == 1) {
-            t = 0
-        } else {
-            t = duration * i / n
-        }
+    if [[ "$value" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
+        printf '%s\n' "$value"
+        return
+    fi
 
-        if (t < 0) {
-            t = 0
-        }
+    if [[ "$value" =~ ^([0-9]+):([0-9]{2}):([0-9]{2})([.][0-9]+)?$ ]]; then
+        awk \
+            -v h="${BASH_REMATCH[1]}" \
+            -v m="${BASH_REMATCH[2]}" \
+            -v s="${BASH_REMATCH[3]}${BASH_REMATCH[4]}" '
+            BEGIN {
+                printf "%.6f\n", h * 3600 + m * 60 + s
+            }
+            '
+        return
+    fi
 
-        printf "frame_%04d,%.6f\n", i + 1, t
-    }
+    echo "Error: invalid timestamp: $value" >&2
+    exit 1
 }
-' |
-while IFS=',' read -r FRAME_ID TIMESTAMP_SECONDS; do
+
+# Build the complete sample list before extracting anything.
+#
+# This is important: deduplication happens at the timestamp level first,
+# so one timestamp can never receive two different frame IDs.
+declare -A TIMESTAMP_TO_METHOD
+declare -A TIMESTAMP_TO_ID
+SAMPLE_TIMESTAMPS=()
+SAMPLE_METHODS=()
+
+add_sample() {
+    local method="$1"
+    local frame_id="$2"
+    local timestamp="$3"
+
+    # Normalize timestamp to six decimal places for deduplication.
+    local key
+    key="$(awk -v t="$timestamp" 'BEGIN { printf "%.6f", t }')"
+
+    if [[ -n "${TIMESTAMP_TO_METHOD[$key]+x}" ]]; then
+        return
+    fi
+
+    TIMESTAMP_TO_METHOD["$key"]="$method"
+    TIMESTAMP_TO_ID["$key"]="$frame_id"
+    SAMPLE_TIMESTAMPS+=("$key")
+    SAMPLE_METHODS+=("$method")
+}
+
+# Generate uniform timestamps.
+while IFS= read -r SAMPLE; do
+    FRAME_ID="${SAMPLE%%,*}"
+    TIMESTAMP_SECONDS="${SAMPLE#*,}"
+    add_sample "uniform" "$FRAME_ID" "$TIMESTAMP_SECONDS"
+done < <(
+    awk \
+        -v duration="$DURATION" \
+        -v n="$NUM_FRAMES" '
+    BEGIN {
+        for (i = 0; i < n; i++) {
+
+            if (n == 1) {
+                t = 0
+            } else {
+                t = duration * i / n
+            }
+
+            if (t < 0) {
+                t = 0
+            }
+
+            printf "uniform_%04d,%.6f\n", i + 1, t
+        }
+    }
+    '
+)
+
+# Generate high-value timestamps at exactly 1 FPS.
+#
+# For [start, end), integer timestamps are generated at:
+#   ceil(start), ceil(start)+1, ..., ceil(end)-1
+#
+# This gives exactly one sample per whole second contained in the interval.
+HV_COUNTER=0
+
+for INTERVAL in "${HV_INTERVALS[@]}"; do
+    START="${INTERVAL%%,*}"
+    END="${INTERVAL#*,}"
+
+    START_SECONDS="$(timestamp_to_seconds "$START")"
+    END_SECONDS="$(timestamp_to_seconds "$END")"
+
+    if ! awk -v start="$START_SECONDS" -v end="$END_SECONDS" '
+        BEGIN { exit !(end > start) }
+    '; then
+        echo "Error: invalid high-value interval: $INTERVAL" >&2
+        exit 1
+    fi
+
+    while IFS= read -r TIMESTAMP_SECONDS; do
+        HV_COUNTER=$((HV_COUNTER + 1))
+        FRAME_ID="$(printf 'hv_%04d' "$HV_COUNTER")"
+        add_sample "hv" "$FRAME_ID" "$TIMESTAMP_SECONDS"
+    done < <(
+        awk \
+            -v start="$START_SECONDS" \
+            -v end="$END_SECONDS" '
+        BEGIN {
+            first = int(start)
+            if (start > first) {
+                first++
+            }
+
+            last = int(end - 0.000001)
+
+            for (t = first; t <= last; t++) {
+                if (t >= start && t < end) {
+                    printf "%.6f\n", t
+                }
+            }
+        }
+        '
+    )
+done
+
+echo "Samples after timestamp deduplication: ${#SAMPLE_TIMESTAMPS[@]}"
+echo
+
+# Extract the deduplicated sample list in sampling order.
+#
+# CSV is appended only after a successful extraction, so it always reflects
+# frames that were actually generated if the script stops part-way through.
+for ((i = 0; i < ${#SAMPLE_TIMESTAMPS[@]}; i++)); do
+    TIMESTAMP_SECONDS="${SAMPLE_TIMESTAMPS[$i]}"
+    METHOD="${SAMPLE_METHODS[$i]}"
+    FRAME_ID="${TIMESTAMP_TO_ID[$TIMESTAMP_SECONDS]}"
 
     OUTPUT_FILE="${OUTPUT_DIR}/${FRAME_ID}.jpg"
 
