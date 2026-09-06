@@ -1,0 +1,30 @@
+<annotation>
+  <filename>hv_0032.jpg</filename>
+  <object>
+    <name>spoon</name>
+    <bndbox>
+      <xmin>293</xmin>
+      <ymin>531</ymin>
+      <xmax>991</xmax>
+      <ymax>1238</ymax>
+    </bndbox>
+  </object>
+  <object>
+    <name>spoon</name>
+    <bndbox>
+      <xmin>243</xmin>
+      <ymin>3</ymin>
+      <xmax>699</xmax>
+      <ymax>709</ymax>
+    </bndbox>
+  </object>
+  <object>
+    <name>knife</name>
+    <bndbox>
+      <xmin>461</xmin>
+      <ymin>998</ymin>
+      <xmax>1072</xmax>
+      <ymax>1930</ymax>
+    </bndbox>
+  </object>
+</annotation>

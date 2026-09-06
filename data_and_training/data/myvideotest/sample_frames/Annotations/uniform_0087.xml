@@ -1,0 +1,30 @@
+<annotation>
+  <filename>uniform_0087.jpg</filename>
+  <object>
+    <name>apple</name>
+    <bndbox>
+      <xmin>0</xmin>
+      <ymin>2</ymin>
+      <xmax>605</xmax>
+      <ymax>500</ymax>
+    </bndbox>
+  </object>
+  <object>
+    <name>apple</name>
+    <bndbox>
+      <xmin>262</xmin>
+      <ymin>1078</ymin>
+      <xmax>727</xmax>
+      <ymax>1646</ymax>
+    </bndbox>
+  </object>
+  <object>
+    <name>orange (fruit)</name>
+    <bndbox>
+      <xmin>930</xmin>
+      <ymin>1296</ymin>
+      <xmax>1076</xmax>
+      <ymax>1766</ymax>
+    </bndbox>
+  </object>
+</annotation>

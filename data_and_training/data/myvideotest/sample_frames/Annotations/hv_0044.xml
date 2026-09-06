@@ -1,0 +1,84 @@
+<annotation>
+  <filename>hv_0044.jpg</filename>
+  <object>
+    <name>orange (fruit)</name>
+    <bndbox>
+      <xmin>0</xmin>
+      <ymin>605</ymin>
+      <xmax>91</xmax>
+      <ymax>932</ymax>
+    </bndbox>
+  </object>
+  <object>
+    <name>orange (fruit)</name>
+    <bndbox>
+      <xmin>742</xmin>
+      <ymin>1360</ymin>
+      <xmax>951</xmax>
+      <ymax>1648</ymax>
+    </bndbox>
+  </object>
+  <object>
+    <name>orange (fruit)</name>
+    <bndbox>
+      <xmin>760</xmin>
+      <ymin>1064</ymin>
+      <xmax>1077</xmax>
+      <ymax>1437</ymax>
+    </bndbox>
+  </object>
+  <object>
+    <name>bowl</name>
+    <bndbox>
+      <xmin>66</xmin>
+      <ymin>0</ymin>
+      <xmax>621</xmax>
+      <ymax>594</ymax>
+    </bndbox>
+  </object>
+  <object>
+    <name>knife</name>
+    <bndbox>
+      <xmin>2</xmin>
+      <ymin>1332</ymin>
+      <xmax>449</xmax>
+      <ymax>1933</ymax>
+    </bndbox>
+  </object>
+  <object>
+    <name>orange (fruit)</name>
+    <bndbox>
+      <xmin>973</xmin>
+      <ymin>897</ymin>
+      <xmax>1078</xmax>
+      <ymax>1175</ymax>
+    </bndbox>
+  </object>
+  <object>
+    <name>orange (fruit)</name>
+    <bndbox>
+      <xmin>176</xmin>
+      <ymin>1036</ymin>
+      <xmax>287</xmax>
+      <ymax>1213</ymax>
+    </bndbox>
+  </object>
+  <object>
+    <name>apple</name>
+    <bndbox>
+      <xmin>187</xmin>
+      <ymin>956</ymin>
+      <xmax>552</xmax>
+      <ymax>1253</ymax>
+    </bndbox>
+  </object>
+  <object>
+    <name>orange (fruit)</name>
+    <bndbox>
+      <xmin>238</xmin>
+      <ymin>971</ymin>
+      <xmax>348</xmax>
+      <ymax>1161</ymax>
+    </bndbox>
+  </object>
+</annotation>

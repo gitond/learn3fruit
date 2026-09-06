@@ -1,0 +1,30 @@
+<annotation>
+  <filename>uniform_0085.jpg</filename>
+  <object>
+    <name>orange (fruit)</name>
+    <bndbox>
+      <xmin>161</xmin>
+      <ymin>1450</ymin>
+      <xmax>921</xmax>
+      <ymax>1920</ymax>
+    </bndbox>
+  </object>
+  <object>
+    <name>knife</name>
+    <bndbox>
+      <xmin>32</xmin>
+      <ymin>222</ymin>
+      <xmax>1088</xmax>
+      <ymax>1915</ymax>
+    </bndbox>
+  </object>
+  <object>
+    <name>knife</name>
+    <bndbox>
+      <xmin>860</xmin>
+      <ymin>1066</ymin>
+      <xmax>1076</xmax>
+      <ymax>1926</ymax>
+    </bndbox>
+  </object>
+</annotation>

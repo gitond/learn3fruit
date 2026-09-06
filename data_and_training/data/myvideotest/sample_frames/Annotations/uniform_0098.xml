@@ -1,0 +1,12 @@
+<annotation>
+  <filename>uniform_0098.jpg</filename>
+  <object>
+    <name>orange (fruit)</name>
+    <bndbox>
+      <xmin>11</xmin>
+      <ymin>893</ymin>
+      <xmax>1086</xmax>
+      <ymax>1893</ymax>
+    </bndbox>
+  </object>
+</annotation>

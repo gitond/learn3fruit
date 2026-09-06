@@ -1,0 +1,57 @@
+<annotation>
+  <filename>uniform_0108.jpg</filename>
+  <object>
+    <name>orange (fruit)</name>
+    <bndbox>
+      <xmin>0</xmin>
+      <ymin>1032</ymin>
+      <xmax>152</xmax>
+      <ymax>1280</ymax>
+    </bndbox>
+  </object>
+  <object>
+    <name>bowl</name>
+    <bndbox>
+      <xmin>64</xmin>
+      <ymin>96</ymin>
+      <xmax>712</xmax>
+      <ymax>890</ymax>
+    </bndbox>
+  </object>
+  <object>
+    <name>orange (fruit)</name>
+    <bndbox>
+      <xmin>211</xmin>
+      <ymin>1061</ymin>
+      <xmax>383</xmax>
+      <ymax>1233</ymax>
+    </bndbox>
+  </object>
+  <object>
+    <name>orange (fruit)</name>
+    <bndbox>
+      <xmin>704</xmin>
+      <ymin>1286</ymin>
+      <xmax>1074</xmax>
+      <ymax>1914</ymax>
+    </bndbox>
+  </object>
+  <object>
+    <name>orange (fruit)</name>
+    <bndbox>
+      <xmin>99</xmin>
+      <ymin>964</ymin>
+      <xmax>259</xmax>
+      <ymax>1118</ymax>
+    </bndbox>
+  </object>
+  <object>
+    <name>orange (fruit)</name>
+    <bndbox>
+      <xmin>2</xmin>
+      <ymin>611</ymin>
+      <xmax>262</xmax>
+      <ymax>1144</ymax>
+    </bndbox>
+  </object>
+</annotation>

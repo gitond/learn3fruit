@@ -1,0 +1,12 @@
+<annotation>
+  <filename>hv_0052.jpg</filename>
+  <object>
+    <name>spoon</name>
+    <bndbox>
+      <xmin>18</xmin>
+      <ymin>1158</ymin>
+      <xmax>1077</xmax>
+      <ymax>1860</ymax>
+    </bndbox>
+  </object>
+</annotation>

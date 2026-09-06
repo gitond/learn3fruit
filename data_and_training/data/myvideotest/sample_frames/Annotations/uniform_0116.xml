@@ -1,0 +1,21 @@
+<annotation>
+  <filename>uniform_0116.jpg</filename>
+  <object>
+    <name>banana</name>
+    <bndbox>
+      <xmin>270</xmin>
+      <ymin>1266</ymin>
+      <xmax>1011</xmax>
+      <ymax>1859</ymax>
+    </bndbox>
+  </object>
+  <object>
+    <name>knife</name>
+    <bndbox>
+      <xmin>97</xmin>
+      <ymin>3</ymin>
+      <xmax>870</xmax>
+      <ymax>1846</ymax>
+    </bndbox>
+  </object>
+</annotation>

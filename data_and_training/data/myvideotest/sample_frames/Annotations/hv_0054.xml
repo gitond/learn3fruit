@@ -1,0 +1,21 @@
+<annotation>
+  <filename>hv_0054.jpg</filename>
+  <object>
+    <name>knife</name>
+    <bndbox>
+      <xmin>334</xmin>
+      <ymin>1043</ymin>
+      <xmax>1075</xmax>
+      <ymax>1552</ymax>
+    </bndbox>
+  </object>
+  <object>
+    <name>knife</name>
+    <bndbox>
+      <xmin>7</xmin>
+      <ymin>1369</ymin>
+      <xmax>515</xmax>
+      <ymax>1918</ymax>
+    </bndbox>
+  </object>
+</annotation>

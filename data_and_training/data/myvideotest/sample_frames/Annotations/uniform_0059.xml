@@ -1,0 +1,12 @@
+<annotation>
+  <filename>uniform_0059.jpg</filename>
+  <object>
+    <name>apple</name>
+    <bndbox>
+      <xmin>13</xmin>
+      <ymin>0</ymin>
+      <xmax>1081</xmax>
+      <ymax>1916</ymax>
+    </bndbox>
+  </object>
+</annotation>

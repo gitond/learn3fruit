@@ -1,0 +1,57 @@
+<annotation>
+  <filename>uniform_0109.jpg</filename>
+  <object>
+    <name>banana</name>
+    <bndbox>
+      <xmin>88</xmin>
+      <ymin>0</ymin>
+      <xmax>606</xmax>
+      <ymax>432</ymax>
+    </bndbox>
+  </object>
+  <object>
+    <name>orange (fruit)</name>
+    <bndbox>
+      <xmin>119</xmin>
+      <ymin>723</ymin>
+      <xmax>296</xmax>
+      <ymax>904</ymax>
+    </bndbox>
+  </object>
+  <object>
+    <name>knife</name>
+    <bndbox>
+      <xmin>629</xmin>
+      <ymin>1026</ymin>
+      <xmax>1023</xmax>
+      <ymax>1540</ymax>
+    </bndbox>
+  </object>
+  <object>
+    <name>apple</name>
+    <bndbox>
+      <xmin>2</xmin>
+      <ymin>621</ymin>
+      <xmax>149</xmax>
+      <ymax>772</ymax>
+    </bndbox>
+  </object>
+  <object>
+    <name>apple</name>
+    <bndbox>
+      <xmin>448</xmin>
+      <ymin>2</ymin>
+      <xmax>640</xmax>
+      <ymax>221</ymax>
+    </bndbox>
+  </object>
+  <object>
+    <name>orange (fruit)</name>
+    <bndbox>
+      <xmin>46</xmin>
+      <ymin>109</ymin>
+      <xmax>133</xmax>
+      <ymax>297</ymax>
+    </bndbox>
+  </object>
+</annotation>

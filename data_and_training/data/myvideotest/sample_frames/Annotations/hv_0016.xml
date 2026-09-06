@@ -1,0 +1,12 @@
+<annotation>
+  <filename>hv_0016.jpg</filename>
+  <object>
+    <name>bowl</name>
+    <bndbox>
+      <xmin>1</xmin>
+      <ymin>1006</ymin>
+      <xmax>277</xmax>
+      <ymax>1706</ymax>
+    </bndbox>
+  </object>
+</annotation>

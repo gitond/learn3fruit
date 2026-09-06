@@ -1,0 +1,30 @@
+<annotation>
+  <filename>hv_0057.jpg</filename>
+  <object>
+    <name>apple</name>
+    <bndbox>
+      <xmin>26</xmin>
+      <ymin>0</ymin>
+      <xmax>1063</xmax>
+      <ymax>1793</ymax>
+    </bndbox>
+  </object>
+  <object>
+    <name>knife</name>
+    <bndbox>
+      <xmin>17</xmin>
+      <ymin>1227</ymin>
+      <xmax>682</xmax>
+      <ymax>1894</ymax>
+    </bndbox>
+  </object>
+  <object>
+    <name>apple</name>
+    <bndbox>
+      <xmin>363</xmin>
+      <ymin>898</ymin>
+      <xmax>766</xmax>
+      <ymax>1540</ymax>
+    </bndbox>
+  </object>
+</annotation>

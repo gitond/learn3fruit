@@ -1,0 +1,48 @@
+<annotation>
+  <filename>hv_0031.jpg</filename>
+  <object>
+    <name>bowl</name>
+    <bndbox>
+      <xmin>656</xmin>
+      <ymin>550</ymin>
+      <xmax>1065</xmax>
+      <ymax>964</ymax>
+    </bndbox>
+  </object>
+  <object>
+    <name>orange (fruit)</name>
+    <bndbox>
+      <xmin>991</xmin>
+      <ymin>357</ymin>
+      <xmax>1078</xmax>
+      <ymax>762</ymax>
+    </bndbox>
+  </object>
+  <object>
+    <name>banana</name>
+    <bndbox>
+      <xmin>0</xmin>
+      <ymin>2</ymin>
+      <xmax>476</xmax>
+      <ymax>371</ymax>
+    </bndbox>
+  </object>
+  <object>
+    <name>orange (fruit)</name>
+    <bndbox>
+      <xmin>987</xmin>
+      <ymin>768</ymin>
+      <xmax>1078</xmax>
+      <ymax>1261</ymax>
+    </bndbox>
+  </object>
+  <object>
+    <name>knife</name>
+    <bndbox>
+      <xmin>28</xmin>
+      <ymin>1280</ymin>
+      <xmax>898</xmax>
+      <ymax>1906</ymax>
+    </bndbox>
+  </object>
+</annotation>

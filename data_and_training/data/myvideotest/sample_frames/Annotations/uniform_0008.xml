@@ -1,0 +1,21 @@
+<annotation>
+  <filename>uniform_0008.jpg</filename>
+  <object>
+    <name>bowl</name>
+    <bndbox>
+      <xmin>0</xmin>
+      <ymin>664</ymin>
+      <xmax>1080</xmax>
+      <ymax>1826</ymax>
+    </bndbox>
+  </object>
+  <object>
+    <name>spoon</name>
+    <bndbox>
+      <xmin>241</xmin>
+      <ymin>171</ymin>
+      <xmax>962</xmax>
+      <ymax>862</ymax>
+    </bndbox>
+  </object>
+</annotation>

@@ -1,0 +1,21 @@
+<annotation>
+  <filename>hv_0029.jpg</filename>
+  <object>
+    <name>bowl</name>
+    <bndbox>
+      <xmin>10</xmin>
+      <ymin>1085</ymin>
+      <xmax>817</xmax>
+      <ymax>1916</ymax>
+    </bndbox>
+  </object>
+  <object>
+    <name>spoon</name>
+    <bndbox>
+      <xmin>642</xmin>
+      <ymin>726</ymin>
+      <xmax>1075</xmax>
+      <ymax>1167</ymax>
+    </bndbox>
+  </object>
+</annotation>
