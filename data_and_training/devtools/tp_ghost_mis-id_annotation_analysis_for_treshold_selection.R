@@ -1,26 +1,3 @@
----
-title: "Analysis of running inference on sample.mp4 using ssd_plus_mobilenet_v2_l3f_20260807_225848"
-author: "Botond Ortutay"
-output: pdf_document
----
-
-### Situation overview & terminology
-
-This analysis aims to examine whether `ssd_plus_mobilenet_v2_l3f_20260807_225848` is usable as the CV-model for the l3f project. I ran an experiment where I took a representative of the real use case. I took a sample of 200 frames from the video. Each of the frames have been run through NN inference. Thus I have an output of 200 frames and N detected objects. Using a self-developed annotation tool I then went through all detected objects and gave each detection one of the following three classifications:
-
- - TP (True Positive): An object is detected and classified correctly
- - GHOST: The NN detects an object where there isn't one (sees a ghost)
- - MIS-ID (Misidentification): The NN detects an object but misclassifies it (an orange is seen when an apple is actually in the frame; the location of the detected orange matches the actual apple)
-
-This data is saved in a .jsonl format. Each detection also has a NN-defined confidence score. My current hypothesis is that a higher score means a higher chance that the detection was correct (TP). If this is true, we could theoretically choose a treshold which would cut off the incorrectly detected objects, thus make our NN usable in the l3f application. Below we run an analysis to find this treshold.
-
-### Setup
-
-Render this document by running `Rscript -e "rmarkdown::render('analysis.Rmd')"` From `data_and_training/data/myvideotest/sample_frames/metadata/`
-
-Libraries:
-
-```{r}
 # for loading data into analysis
 library(jsonlite)
 
@@ -32,21 +9,11 @@ library(tidyr)
 library(ggplot2)
 library(scales)
 library(knitr)
-```
-
-Data input:
-
-```{r}
 input_file <- "results_annotated.jsonl"
 
 raw_data <- stream_in(file(input_file), verbose = FALSE)
 
 length(raw_data)
-```
-
-Data flattening:
-
-```{r}
 detections <- raw_data %>%
   mutate(
     frame = image
@@ -70,13 +37,6 @@ detections <- raw_data %>%
   )
 
 print(as.data.frame(head(detections)), row.names = FALSE)
-```
-
-### Tables
-
-Score ranges & TP rate:
-
-```{r}
 score_breaks <- seq(0, 1, by = 0.05)
 
 score_range_stats <- detections %>%
@@ -104,11 +64,6 @@ print(score_range_stats %>%
   as.data.frame(row.names = NULL),
   row.names = FALSE
 )
-```
-
-Tresholds & Precision:
-
-```{r}
 highest_score <- max(detections$score, na.rm = TRUE)
 # ceiling would round up to an integer. We want to round up to the next heundredth 
 # (seuraavaan sadasosaan)
@@ -161,11 +116,6 @@ threshold_stats %>%
     `n(GHOST)` = n_ghost,
     `precision` = percent(precision, accuracy = 0.1)
   )
-```
-
-Tresholds & Precision with Portion of all TPs accepted:
-
-```{r}
 threshold_stats %>%
   transmute(
     threshold = sprintf("%.2f", threshold),
@@ -173,11 +123,6 @@ threshold_stats %>%
     `portion of all TPs accepted` =
       percent(tp_retention, accuracy = 0.1)
   )
-```
-
-Per-class medians:
-
-```{r}
 class_medians <- detections %>%
   group_by(class) %>%
   summarise(
@@ -203,11 +148,6 @@ class_medians <- detections %>%
   )
 
 print(as.data.frame(class_medians), row.names = FALSE)
-```
-
-Mean of per class median TPs, MIS-IDs, GHOSTs:
-
-```{r}
 class_median_means <- data.frame(
   outcome = c("TP", "MIS-ID", "GHOST"),
   mean_of_class_medians = c(
@@ -218,11 +158,6 @@ class_median_means <- data.frame(
 )
 
 class_median_means
-```
-
-Per-frame statistics:
-
-```{r}
 all_frames <- raw_data %>%
   transmute(frame = image)
 
@@ -267,11 +202,6 @@ frame_stats %>%
       percent(`TP rate`, accuracy = 0.1)
     )
   )
-```
-
-Overall summary matrix:
-
-```{r}
 overall_score_stats <- detections %>%
   group_by(annotation) %>%
   summarise(
@@ -287,13 +217,6 @@ overall_score_stats <- detections %>%
   )
 
 print(as.data.frame(overall_score_stats), row.names = FALSE)
-```
-
-### Plots
-
-Score distributions:
-
-```{r}
 ggplot(
   detections,
   aes(
@@ -318,11 +241,6 @@ ggplot(
     fill = "Outcome"
   ) +
   theme_minimal()
-```
-
-Precision vs treshold:
-
-```{r}
 ggplot(
   threshold_stats,
   aes(
@@ -346,11 +264,6 @@ ggplot(
     y = "Precision"
   ) +
   theme_minimal()
-```
-
-Retention vs treshold:
-
-```{r}
 ggplot(
   threshold_stats,
   aes(
@@ -374,25 +287,3 @@ ggplot(
     y = "Portion of all TPs accepted"
   ) +
   theme_minimal()
-```
-
-### Interpretation & Treshold selection
-
-Score ranges & TP rate table, seems to confirm that the TP-rate indeed raises with the confidence score, meaning that higher confidence detections can be roughly thought of as "better"
-
-`[0.35,0.4)` is the first interval where the TP-rate is above 50%, and above that it mostly holds.
-
-This range looks like this in the treshold & precision table:
-
-```
-##  26  0.35    208 121 54  33  58.2%
-##  27  0.36    195 114 50  31  58.5%
-##  28  0.37    184 110 44  30  59.8%
-##  29  0.38    168 101 39  28  60.1%
-##  30  0.39    163 98  38  27  60.1%
-##  31  0.40    148 90  33  25  60.8%
-```
-
-So a slowly rising precision (58% -> 61%) vs a rapidly falling `n(accepted)` value (208 -> 148). With a 0.10 treshold `n(accepted)` is 1221 so even with a treshold of 0.35 only $\frac{208}{1221} \approx 17,03\%$ of the total classifications would be accepted by the treshold. The lowest treshold where precision is over 50% is 0.30. Here $\frac{274}{1221} \approx 22,44\%$ are accepted. At $\frac{2}{3}$ precision we're looking at a treshold of 0.47 and an acceptance rate of $\frac{103}{1221} \approx 8,436\%$. Note that this test was done with a 200 frame sample. That'd mean that with a 0.47 treshold we only have $\frac{103}{200} = 0,5150$ accepted detections per frame. With a 0.35 treshold we have $\frac{208}{200} = 1,0400$ accepted detections per frame and with a 0.30 treshold we have $\frac{274}{200} = 1,3700$ accepted detections per frame. Even a 0.30 treshold discards more than half of the detected TPs.
-
-All in all I conclude that this NN is capable of doing the job, but it's expected to do its job fairly poorly. I'd suggest applying a treshold of 0.35 to the NN.
