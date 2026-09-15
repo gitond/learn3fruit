@@ -1,3 +1,7 @@
+*/node_modules/
+*.log
+browser_app/dist/
+browser_app/.vite/
 data_and_training/*/dl*.txt
 !data_and_training/data/l3fds/*/dl*.txt
 data_and_training/data/l3fds/ds

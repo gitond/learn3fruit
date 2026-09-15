@@ -1,0 +1,22 @@
+{
+  "name": "browser_app",
+  "version": "1.0.0",
+  "description": "The browser app component of L3F; An attempt to create a WebAR app by running the tracking on a Computer Vision (Object detection) model",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "serve": "node static_server.js"
+  },
+  "keywords": [],
+  "author": "Botond Ortutay",
+  "license": "ISC",
+  "devDependencies": {
+    "vite": "^8.3.0"
+  },
+  "dependencies": {
+    "@litertjs/core": "^2.5.3"
+  }
+}
