@@ -26,6 +26,18 @@
                 <dd id="model-status">Not loaded</dd>
             </dl>
         </section>
+
+        <!-- My first inference test -->
+        <section>
+            <h2>Inference Test</h2>
+            <!-- Test image gitignored, won't show up on something ripped from the git repo. Example that can be used: OIDv7 078821d86db99fc9 width="1024" height="683" -->
+            <img id="test-image" src="/test_image.jpg" crossOrigin="anonymous" alt="Test sample image" width="1024" height="683" />
+            <br />
+            <button id="run-btn" disabled>Run Inference</button>
+
+            <h3>Detections Output</h3>
+            <pre id="output-box">Awaiting inference execution...</pre>
+        </section>
     </main>
 
     <script type="module" src="/src/main.js"></script>
