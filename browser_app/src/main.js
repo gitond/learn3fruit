@@ -5,8 +5,10 @@ const browserStatusElement = document.querySelector('#browser-status');
 const applicationStatusElement = document.querySelector('#application-status');
 const modelStatusElement = document.querySelector('#model-status');
 
+const imageWrapperElement = document.querySelector('#image-wrapper');
 const imageInputElement = document.querySelector('#image-input');
 const testImageElement = document.querySelector('#test-image');
+const canvasElement = document.querySelector('#output-canvas');
 const runButton = document.querySelector('#run-btn');
 const outputBoxElement = document.querySelector('#output-box');
 
@@ -14,6 +16,16 @@ const outputBoxElement = document.querySelector('#output-box');
 let objectDetector = null;
 let currentObjectUrl = null;
 let imageReady = false;
+
+// Helper to generate a consistent HSL color based on string hash
+function getLabelColor(label) {
+  let hash = 0;
+  for (let i = 0; i < label.length; i++) {
+    hash = label.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  const hue = Math.abs(hash % 360);
+  return `hsl(${hue}, 85%, 45%)`;
+}
 
 function setStatus(message) {
   statusElement.textContent = message;
@@ -30,8 +42,17 @@ function resetImageSelection() {
     currentObjectUrl = null;
   }
   imageReady = false;
-  testImageElement.style.display = 'none';
+
+  // Hide container, leave testImageElement display rules alone
+  if (imageWrapperElement) {
+    imageWrapperElement.style.display = 'none';
+  }
   testImageElement.src = '';
+
+  // Reset canvas
+  const ctx = canvasElement.getContext('2d');
+  ctx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+
   outputBoxElement.textContent = 'Awaiting inference execution...';
   updateRunButtonState();
 }
@@ -62,7 +83,12 @@ function loadSelectedImage(file) {
 
   testImageElement.onload = () => {
     imageReady = true;
-    testImageElement.style.display = 'block';
+
+    // Match internal canvas buffer resolution to raw image resolution
+    canvasElement.width = testImageElement.naturalWidth;
+    canvasElement.height = testImageElement.naturalHeight;
+
+    imageWrapperElement.style.display = 'block';
     updateRunButtonState();
   };
 
@@ -125,32 +151,55 @@ function runInference(detector) {
 
   // Execute inference on the image element
   const detectionResult = detector.detect(testImageElement);
-
   console.log('Detection Output:', detectionResult);
 
-  // Format and output detection data
+  // Canvas operations
+  const ctx = canvasElement.getContext('2d');
+  // Clear any previous render
+  ctx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+
   if (detectionResult.detections.length === 0) {
     outputBoxElement.textContent = 'Inference complete. No objects detected above score threshold.';
     return;
   }
 
-  const formattedOutput = detectionResult.detections.map((detection, index) => {
+  // Draw detections
+  detectionResult.detections.forEach((detection) => {
     const box = detection.boundingBox;
     const category = detection.categories[0];
+    const label = category.categoryName || category.displayName || 'Unknown';
+    const score = (category.score * 100).toFixed(1);
+    const color = getLabelColor(label);
 
-    return [
-      `--- Detection #${index + 1} ---`,
-      `Label: ${category.categoryName || category.displayName || 'Unknown'}`,
-      `Score: ${(category.score * 100).toFixed(2)}%`,
-      `Bounding Box:`,
-      `  Origin X: ${box.originX}px`,
-      `  Origin Y: ${box.originY}px`,
-      `  Width:    ${box.width}px`,
-      `  Height:   ${box.height}px`
-    ].join('\n');
-  }).join('\n\n');
+    // 1. Draw Bounding Box
+    ctx.strokeStyle = color;
+    ctx.lineWidth = Math.max(2, Math.round(canvasElement.width / 300)); // Dynamic stroke scaled to image size
+    ctx.strokeRect(box.originX, box.originY, box.width, box.height);
 
-  outputBoxElement.textContent = formattedOutput;
+    // 2. Prepare Label Text
+    const text = `${label} ${score}%`;
+    const fontSize = Math.max(14, Math.round(canvasElement.width / 50));
+    ctx.font = `bold ${fontSize}px sans-serif`
+
+    const textMetrics = ctx.measureText(text);
+    const textWidth = textMetrics.width;
+    const textHeight = fontSize + 6;
+
+    // 3. Draw Label Background Box
+    let labelY = box.originY - textHeight;
+    // Keep label inside top border if box is at the very edge
+    if (labelY < 0) labelY = box.originY;
+
+    ctx.fillStyle = color;
+    ctx.fillRect(box.originX, labelY, textWidth + 8, textHeight);
+
+    // 4. Draw Label Text
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillText(text, box.originX + 4, labelY + fontSize);
+  });
+
+
+  outputBoxElement.textContent = `Inference complete. Detected ${detectionResult.detections.length} object(s).`;
 }
 
 checkBrowser();
