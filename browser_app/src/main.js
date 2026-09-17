@@ -5,9 +5,15 @@ const browserStatusElement = document.querySelector('#browser-status');
 const applicationStatusElement = document.querySelector('#application-status');
 const modelStatusElement = document.querySelector('#model-status');
 
+const imageInputElement = document.querySelector('#image-input');
 const testImageElement = document.querySelector('#test-image');
 const runButton = document.querySelector('#run-btn');
 const outputBoxElement = document.querySelector('#output-box');
+
+// Application State
+let objectDetector = null;
+let currentObjectUrl = null;
+let imageReady = false;
 
 function setStatus(message) {
   statusElement.textContent = message;
@@ -16,6 +22,58 @@ function setStatus(message) {
 function checkBrowser() {
   browserStatusElement.textContent = `${navigator.userAgent}`;
   return true;
+}
+
+function resetImageSelection() {
+  if (currentObjectUrl) {
+    URL.revokeObjectURL(currentObjectUrl);
+    currentObjectUrl = null;
+  }
+  imageReady = false;
+  testImageElement.style.display = 'none';
+  testImageElement.src = '';
+  outputBoxElement.textContent = 'Awaiting inference execution...';
+  updateRunButtonState();
+}
+
+function handleImageSelection(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+
+  // Enforce JPG/JPEG validation in JS
+  const validTypes = ['image/jpeg', 'image/jpg'];
+  const hasJpgExtension = /\.(jpe?g)$/i.test(file.name);
+
+  if (!validTypes.includes(file.type) && !hasJpgExtension) {
+    alert('Please select a valid .jpg or .jpeg image.');
+    event.target.value = '';
+    resetImageSelection();
+    return;
+  }
+
+  loadSelectedImage(file);
+}
+
+function loadSelectedImage(file) {
+  resetImageSelection();
+
+  currentObjectUrl = URL.createObjectURL(file);
+  testImageElement.src = currentObjectUrl;
+
+  testImageElement.onload = () => {
+    imageReady = true;
+    testImageElement.style.display = 'block';
+    updateRunButtonState();
+  };
+
+  testImageElement.onerror = () => {
+    resetImageSelection();
+    outputBoxElement.textContent = 'Failed to load selected image.';
+  };
+}
+
+function updateRunButtonState() {
+  runButton.disabled = !(objectDetector && imageReady);
 }
 
 async function startApplication() {
@@ -30,7 +88,8 @@ async function startApplication() {
     // 2. Load and compile the model file directly
     modelStatusElement.textContent = 'Fetching and compiling model.tflite...';
 
-    const objectDetector = await ObjectDetector.createFromOptions(vision, {
+    // objectDetector is a global variable from the state machine
+    objectDetector = await ObjectDetector.createFromOptions(vision, {
       baseOptions: {
         modelAssetPath: '/models/model.tflite',
         delegate: 'CPU' // Or 'GPU'
@@ -42,9 +101,10 @@ async function startApplication() {
     modelStatusElement.textContent = 'Model loaded and compiled successfully!';
     setStatus('Application started successfully.');
 
-    // Enable inference trigger UI
-    runButton.disabled = false;
+    // Save instance to state and bind listeners
+    imageInputElement.addEventListener('change', handleImageSelection);
     runButton.addEventListener('click', () => runInference(objectDetector));
+    updateRunButtonState();
 
     console.log('ObjectDetector ready:', objectDetector);
     return objectDetector;
@@ -56,8 +116,8 @@ async function startApplication() {
 }
 
 function runInference(detector) {
-  if (!testImageElement.complete) {
-    outputBoxElement.textContent = 'Image still loading, please wait...';
+  if (!imageReady) {
+    outputBoxElement.textContent = 'No valid image loaded, please select an image...';
     return;
   }
 

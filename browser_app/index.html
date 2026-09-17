@@ -5,6 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
     <title>CVNN Browser App</title>
+    <style>
+        #test-image {
+            width: 100%;
+            height: auto;
+            display: none;
+            margin-bottom: 1rem;
+        }
+    </style>
 </head>
 
 <body>
@@ -27,11 +35,16 @@
             </dl>
         </section>
 
-        <!-- My first inference test -->
+        <!-- Inference test, image upload -->
         <section>
             <h2>Inference Test</h2>
-            <!-- Test image gitignored, won't show up on something ripped from the git repo. Example that can be used: OIDv7 078821d86db99fc9 width="1024" height="683" -->
-            <img id="test-image" src="/test_image.jpg" crossOrigin="anonymous" alt="Test sample image" width="1024" height="683" />
+
+            <div style="margin-bottom: 1rem;">
+                <label for="image-input">Select JPEG Image: </label>
+                <input type="file" id="image-input" accept=".jpg,.jpeg,image/jpeg" />
+            </div>
+
+            <img id="test-image" alt="Selected image preview" />
             <br />
             <button id="run-btn" disabled>Run Inference</button>
 
