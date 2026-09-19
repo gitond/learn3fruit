@@ -1,10 +1,16 @@
+/// LIBRARY IMPORTS ///
 import { ObjectDetector, FilesetResolver } from '@mediapipe/tasks-vision';
+/// APPLICATION MODULE IMPORTS ///
+import { startCamera, stopCamera, getCameraState, getCameraFps } from './camera.js';
 
+/// DOM STUFF ///
+// environment related
 const statusElement = document.querySelector('#status');
 const browserStatusElement = document.querySelector('#browser-status');
 const applicationStatusElement = document.querySelector('#application-status');
 const modelStatusElement = document.querySelector('#model-status');
 
+// inference test related
 const imageWrapperElement = document.querySelector('#image-wrapper');
 const imageInputElement = document.querySelector('#image-input');
 const testImageElement = document.querySelector('#test-image');
@@ -12,11 +18,128 @@ const canvasElement = document.querySelector('#output-canvas');
 const runButton = document.querySelector('#run-btn');
 const outputBoxElement = document.querySelector('#output-box');
 
-// Application State
+// camera related
+const cameraVideoElement = document.querySelector('#camera-video');
+const cameraStartBtn = document.querySelector('#camera-start-btn');
+const cameraStopBtn = document.querySelector('#camera-stop-btn');
+const cameraStatusElement = document.querySelector('#camera-status');
+const cameraFpsElement = document.querySelector('#camera-fps');
+
+
+/// APPLICATION STATE ///
 let objectDetector = null;
 let currentObjectUrl = null;
 let imageReady = false;
+let fpsAnimationInterval = null; // Used to update the UI FPS reading on a timer
+function updateRunButtonState() { runButton.disabled = !(objectDetector && imageReady); }
 
+/// LOADING & SETUP ///
+async function startApplication() {
+  applicationStatusElement.textContent = 'Initializing MediaPipe Vision WASM...';
+  setStatus('Loading runtime...');
+
+  try {
+    // 1. Resolve WASM assets served from /wasm/
+    const vision = await FilesetResolver.forVisionTasks('/wasm'); // No slash at the end; Would break file system
+    applicationStatusElement.textContent = 'MediaPipe WASM initialized.';
+
+    // 2. Load and compile the model file directly
+    modelStatusElement.textContent = 'Fetching and compiling model.tflite...';
+
+    // objectDetector is a global variable from the state machine
+    objectDetector = await ObjectDetector.createFromOptions(vision, {
+      baseOptions: {
+        modelAssetPath: '/models/model.tflite',
+        delegate: 'CPU' // Or 'GPU'
+      },
+      scoreThreshold: 0.35,
+      runningMode: 'IMAGE'
+    });
+
+    modelStatusElement.textContent = 'Model loaded and compiled successfully!';
+    setStatus('Application started successfully.');
+
+    // Save instance to state and bind listeners
+    // - generic
+    imageInputElement.addEventListener('change', handleImageSelection);
+    runButton.addEventListener('click', () => runInference(objectDetector));
+    updateRunButtonState();
+    // - camera
+    cameraStartBtn.addEventListener('click', handleStartCamera);
+    cameraStopBtn.addEventListener('click', handleStopCamera);
+
+    console.log('ObjectDetector ready:', objectDetector);
+    return objectDetector;
+  } catch (error) {
+    console.error('Failed to initialize MediaPipe ObjectDetector:', error);
+    setStatus(`Error: ${error.message}`);
+    modelStatusElement.textContent = 'Failed to load/compile.';
+  }
+}
+
+
+/// WEBCAM HANDLING ///
+async function handleStartCamera() {
+  // Update button states & status text during request
+  cameraStartBtn.disabled = true;
+  cameraStatusElement.textContent = 'Requesting camera access...';
+
+  try {
+    await startCamera(cameraVideoElement);
+
+    // Successfully started
+    cameraStopBtn.disabled = false;
+    cameraStatusElement.textContent = 'Camera active (running)';
+
+    // Start UI update timer for rendering current FPS
+    startFpsUiLoop();
+  } catch (error) {
+    cameraStartBtn.disabled = false;
+    cameraStopBtn.disabled = true;
+
+    if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
+      cameraStatusElement.textContent = 'Error: Camera access denied by user or browser.';
+    } else if (error.name === 'NotFoundError' || error.name === 'DevicesNotFoundError') {
+      cameraStatusElement.textContent = 'Error: No camera device found.';
+    } else {
+      cameraStatusElement.textContent = `Error: ${error.message || 'Unable to access camera.'}`;
+    }
+  }
+}
+
+function handleStopCamera() {
+  stopCamera();
+  stopFpsUiLoop();
+
+  // Reset UI
+  cameraStartBtn.disabled = false;
+  cameraStopBtn.disabled = true;
+  cameraStatusElement.textContent = 'Camera stopped';
+  cameraFpsElement.textContent = '—';
+}
+
+function startFpsUiLoop() {
+  stopFpsUiLoop();
+
+  // Refresh the rendered FPS text every ~250ms so numbers don't flicker uncontrollably
+  fpsAnimationInterval = setInterval(() => {
+    if (getCameraState() === 'running') {
+      const currentFps = getCameraFps();
+      cameraFpsElement.textContent = currentFps > 0 ? `${currentFps.toFixed(1)} FPS` : 'Calculating...';
+    }
+  }, 250);
+}
+
+function stopFpsUiLoop() {
+  if (fpsAnimationInterval) {
+    clearInterval(fpsAnimationInterval);
+    fpsAnimationInterval = null;
+  }
+}
+
+
+
+/// DISPLAYING & RENDERING FUNCTIONS ///
 // Helper to generate a consistent HSL color based on string hash
 function getLabelColor(label) {
   let hash = 0;
@@ -36,6 +159,8 @@ function checkBrowser() {
   return true;
 }
 
+
+/// IMAGE HANDLING FUNCTIONS ///
 function resetImageSelection() {
   if (currentObjectUrl) {
     URL.revokeObjectURL(currentObjectUrl);
@@ -98,49 +223,7 @@ function loadSelectedImage(file) {
   };
 }
 
-function updateRunButtonState() {
-  runButton.disabled = !(objectDetector && imageReady);
-}
-
-async function startApplication() {
-  applicationStatusElement.textContent = 'Initializing MediaPipe Vision WASM...';
-  setStatus('Loading runtime...');
-
-  try {
-    // 1. Resolve WASM assets served from /wasm/
-    const vision = await FilesetResolver.forVisionTasks('/wasm'); // No slash at the end; Would break file system
-    applicationStatusElement.textContent = 'MediaPipe WASM initialized.';
-
-    // 2. Load and compile the model file directly
-    modelStatusElement.textContent = 'Fetching and compiling model.tflite...';
-
-    // objectDetector is a global variable from the state machine
-    objectDetector = await ObjectDetector.createFromOptions(vision, {
-      baseOptions: {
-        modelAssetPath: '/models/model.tflite',
-        delegate: 'CPU' // Or 'GPU'
-      },
-      scoreThreshold: 0.35,
-      runningMode: 'IMAGE'
-    });
-
-    modelStatusElement.textContent = 'Model loaded and compiled successfully!';
-    setStatus('Application started successfully.');
-
-    // Save instance to state and bind listeners
-    imageInputElement.addEventListener('change', handleImageSelection);
-    runButton.addEventListener('click', () => runInference(objectDetector));
-    updateRunButtonState();
-
-    console.log('ObjectDetector ready:', objectDetector);
-    return objectDetector;
-  } catch (error) {
-    console.error('Failed to initialize MediaPipe ObjectDetector:', error);
-    setStatus(`Error: ${error.message}`);
-    modelStatusElement.textContent = 'Failed to load/compile.';
-  }
-}
-
+/// INFERENCE STUFF ///
 function runInference(detector) {
   if (!imageReady) {
     outputBoxElement.textContent = 'No valid image loaded, please select an image...';
@@ -202,5 +285,7 @@ function runInference(detector) {
   outputBoxElement.textContent = `Inference complete. Detected ${detectionResult.detections.length} object(s).`;
 }
 
+
+/// ACTUALLY RUNNING THIS FILE ///
 checkBrowser();
 startApplication();

@@ -1,10 +1,11 @@
-Following steps are currently:
+ 1. Webcam integration. Day by day:
+    1. Camera module. In own .js file. Import it into main.js. Link up to new UI element in index.html. Keep separate from inference at first. Measure camera fps. Think about permission handling, permission failure, etc
+    2. Frame sampling. Start with 10fps.  Make sampling format match nn input. Run inference on samples (without visualisations yet). Try to match sampling and inference rates experiment with (1-30 fps sampling, variable sample rate, compare to inference rate, etc.). Make camera vs sampling vs inference measurements.
+    3. Debug day for previous 2.
+    4. Connect inference visualisations to webcam rendering. Test: Multiple devices, cameras, etc. Test: long-running behavior (watch for: memory growth, increasing inference latency, browser throttling, exceptions, camera stream stopping, inference loop continuing after camera shutdown). For every test: record as much data as possible. Ensure interfaces are as clean as possible.
+ 2. Tracking: `Obd -> insDet`; some internal logic of the following: given object o of category c is at location (400x,150y); if an object of category c is at (395x,145y) in the next frame, it's likely the same object.
+ 3. Some way to record instance trajectories
+ 4. AR UI: appropriate 3D renderings on coordinates of the input frames based on inference results using some 3D js library (Three.js is a possibility, others should be investigated)
+ 5. AR progress detection; The user is supposed to complete a list of steps while in the AR app; we can build a model of "what kind of movements of each object category constitute progress in the step list", and we can turn this into AR progress detection.
 
- 1. some kind of brief data examination phase - looking at the output to see that the produced split matches the desired criteria for it (stratification, seeded randomness, (85/15)/(298/52) split) - agian, this ought to be brief - a few commands I can run
- 2. educated guesses for hyperparameters - we probably don't want to run an actual proper hpo study at this point, but given
-    1. a Nvidia Geforce GTX 1660 SUPER
-    2. two Nvidia Geforce RTX 3090 GOUs
-
-what kind of hyperparameters should we use? This ought to be answered in a `thesis_relevant/q_and_a.md` like fashion (probably best to integrate similar question between 3 and 4) So a brief writeup and actual tangible quotes from scientific literature (DOI number) or technical documentation or arxiv publications, code from the internet (github projects, ipynb notebooks, huuggingface, kaggle & the like) or if nothing better exists technical blogs (medium.com) etc. Here's the [relevant documentation of what hyperparameters are setuppable on mediapipe model maker](https://developers.google.com/edge/api/mediapipe/python/mediapipe_model_maker/object_detector/HParams)
-
- 3. perform the actual training. "Test training" so actually starting & stopping a training process has already been completed, relevant code is in `data_and_training/devtools/tests/mediapipe_obd_training.py`. Most of this can be reused. The train and test data ought to be imported from the correct datasets & the hyperparameters ought to match whatever we decided in step 2 for the given gpu setup we have. Tha model should be exported to `data_and_training/models/ssd_plus_mobilenet_v2_l3f_TIMESTAMP/model.tflite` The training file ought to be written to `data_and_training/trainer.py`
+Intersting links: [](https://hackernoon.com/we-built-a-face-and-mask-detection-web-app-for-google-chrome-836n33aq) [](https://www.webrtc-developers.com/building-your-own-video-pipeline/)

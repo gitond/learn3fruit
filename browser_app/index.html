@@ -26,6 +26,27 @@
             height: 100%;
             pointer-events: none; /* Lets mouse clicks pass through to image if needed */
         }
+
+        .camera-container {
+            width: 100%;
+            max-width: 800px;
+            margin-bottom: 1rem;
+        }
+
+        #camera-video {
+            display: block;
+            width: 100%;
+            height: auto;
+            background: #000;
+        }
+
+        .camera-controls {
+            margin-top: 0.75rem;
+        }
+
+        .camera-controls button {
+            margin-right: 0.5rem;
+        }
     </style>
 </head>
 
@@ -68,6 +89,26 @@
             <h3>Detections Output</h3>
             <pre id="output-box">Awaiting inference execution...</pre>
         </section>
+
+        <!-- Webcam section (first test) -->
+        <h2>Webcam renderer (first version)</h2>
+        <div class="camera-container">
+            <video id="camera-video" autoplay playsinline></video>
+        </div>
+
+        <div class="camera-controls">
+            <button id="camera-start-btn">Start Camera</button>
+            <button id="camera-stop-btn" disabled>Stop Camera</button>
+        </div>
+
+        <dl>
+            <dt>Camera status</dt>
+            <dd id="camera-status">Camera not started</dd>
+
+            <dt>Camera FPS</dt>
+            <dd id="camera-fps">—</dd>
+        </dl>
+
     </main>
 
     <script type="module" src="/src/main.js"></script>
