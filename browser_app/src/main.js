@@ -62,7 +62,7 @@ async function startApplication() {
     // Save instance to state and bind listeners
     // - generic
     imageInputElement.addEventListener('change', handleImageSelection);
-    runButton.addEventListener('click', () => runInference(objectDetector));
+    runButton.addEventListener('click', () => runUploadedImageInference(objectDetector));
     updateRunButtonState();
     // - camera
     cameraStartBtn.addEventListener('click', handleStartCamera);
@@ -159,6 +159,74 @@ function checkBrowser() {
   return true;
 }
 
+/**
+ * Renders detection bounding boxes and labels onto a canvas.
+ *
+ * @param {DetectionResult} detectionResult
+ * @param {HTMLCanvasElement} canvasElement
+ */
+function renderDetectionResult(detectionResult, canvasElement) {
+  const ctx = canvasElement.getContext('2d');
+
+  // Clear any previous render
+  ctx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+
+  if (detectionResult.detections.length === 0) {
+    return;
+  }
+
+  detectionResult.detections.forEach((detection) => {
+    const box = detection.boundingBox;
+    const category = detection.categories[0];
+    const label = category.categoryName || category.displayName || 'Unknown';
+    const score = (category.score * 100).toFixed(1);
+    const color = getLabelColor(label);
+
+    // 1. Draw Bounding Box
+    ctx.strokeStyle = color;
+    ctx.lineWidth = Math.max(2, Math.round(canvasElement.width / 300));
+    ctx.strokeRect(
+      box.originX,
+      box.originY,
+      box.width,
+      box.height
+    );
+
+    // 2. Prepare Label Text
+    const text = `${label} ${score}%`;
+    const fontSize = Math.max(14, Math.round(canvasElement.width / 50));
+    ctx.font = `bold ${fontSize}px sans-serif`;
+
+    const textMetrics = ctx.measureText(text);
+    const textWidth = textMetrics.width;
+    const textHeight = fontSize + 6;
+
+    // 3. Draw Label Background Box
+    let labelY = box.originY - textHeight;
+
+    // Keep label inside top border if box is at the very edge
+    if (labelY < 0) {
+      labelY = box.originY;
+    }
+
+    ctx.fillStyle = color;
+    ctx.fillRect(
+      box.originX,
+      labelY,
+      textWidth + 8,
+      textHeight
+    );
+
+    // 4. Draw Label Text
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillText(
+      text,
+      box.originX + 4,
+      labelY + fontSize
+    );
+  });
+}
+
 
 /// IMAGE HANDLING FUNCTIONS ///
 function resetImageSelection() {
@@ -224,67 +292,56 @@ function loadSelectedImage(file) {
 }
 
 /// INFERENCE STUFF ///
-function runInference(detector) {
+/**
+ * Runs object detection on an image element.
+ *
+ * This is the core inference operation. It deliberately has
+ * no knowledge of UI rendering or where the image came from.
+ *
+ * @param {ObjectDetector} detector
+ * @param {HTMLImageElement} imageElement
+ * @returns {DetectionResult}
+ */
+function runInference(detector, imageElement) {
+  return detector.detect(imageElement);
+}
+
+/**
+ * Runs inference using the currently loaded uploaded image
+ * and performs the existing uploaded-image UI/rendering.
+ *
+ * @param {ObjectDetector} detector
+ */
+function runUploadedImageInference(detector) {
   if (!imageReady) {
-    outputBoxElement.textContent = 'No valid image loaded, please select an image...';
+    outputBoxElement.textContent =
+      'No valid image loaded, please select an image...';
     return;
   }
 
   outputBoxElement.textContent = 'Running inference...';
 
-  // Execute inference on the image element
-  const detectionResult = detector.detect(testImageElement);
+  const detectionResult = runInference(
+    detector,
+    testImageElement
+  );
+
   console.log('Detection Output:', detectionResult);
 
-  // Canvas operations
-  const ctx = canvasElement.getContext('2d');
-  // Clear any previous render
-  ctx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+  renderDetectionResult(
+    detectionResult,
+    canvasElement
+  );
 
   if (detectionResult.detections.length === 0) {
-    outputBoxElement.textContent = 'Inference complete. No objects detected above score threshold.';
+    outputBoxElement.textContent =
+      'Inference complete. No objects detected above score threshold.';
     return;
   }
 
-  // Draw detections
-  detectionResult.detections.forEach((detection) => {
-    const box = detection.boundingBox;
-    const category = detection.categories[0];
-    const label = category.categoryName || category.displayName || 'Unknown';
-    const score = (category.score * 100).toFixed(1);
-    const color = getLabelColor(label);
-
-    // 1. Draw Bounding Box
-    ctx.strokeStyle = color;
-    ctx.lineWidth = Math.max(2, Math.round(canvasElement.width / 300)); // Dynamic stroke scaled to image size
-    ctx.strokeRect(box.originX, box.originY, box.width, box.height);
-
-    // 2. Prepare Label Text
-    const text = `${label} ${score}%`;
-    const fontSize = Math.max(14, Math.round(canvasElement.width / 50));
-    ctx.font = `bold ${fontSize}px sans-serif`
-
-    const textMetrics = ctx.measureText(text);
-    const textWidth = textMetrics.width;
-    const textHeight = fontSize + 6;
-
-    // 3. Draw Label Background Box
-    let labelY = box.originY - textHeight;
-    // Keep label inside top border if box is at the very edge
-    if (labelY < 0) labelY = box.originY;
-
-    ctx.fillStyle = color;
-    ctx.fillRect(box.originX, labelY, textWidth + 8, textHeight);
-
-    // 4. Draw Label Text
-    ctx.fillStyle = '#FFFFFF';
-    ctx.fillText(text, box.originX + 4, labelY + fontSize);
-  });
-
-
-  outputBoxElement.textContent = `Inference complete. Detected ${detectionResult.detections.length} object(s).`;
+  outputBoxElement.textContent =
+    `Inference complete. Detected ${detectionResult.detections.length} object(s).`;
 }
-
 
 /// ACTUALLY RUNNING THIS FILE ///
 checkBrowser();

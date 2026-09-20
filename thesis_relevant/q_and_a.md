@@ -94,3 +94,7 @@ We use a standard cosine decay so `cosine_decay_epochs = epochs` (30, 60, 90, 12
 ---
 
 ## 6. Precise browser app structure and specification still needs to be decided
+
+---
+
+## 7. Frame sampling rate in AR; Does this matter?
