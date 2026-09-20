@@ -32,7 +32,9 @@ let objectDetector = null;
 let currentObjectUrl = null;
 let imageReady = false;
 let fpsAnimationInterval = null; // Used to update the UI FPS reading on a timer
+let inferenceInterval = null; // Timer reference for periodic camera inference (inference fps)
 function updateRunButtonState() { runButton.disabled = !(objectDetector && imageReady); }
+
 
 /// LOADING & SETUP ///
 async function startApplication() {
@@ -96,6 +98,9 @@ async function handleStartCamera() {
 
     // Start UI update timer for rendering current FPS
     startFpsUiLoop();
+
+    // Start running inference at specified FPS
+    startCameraInferenceLoop(5);
   } catch (error) {
     cameraStartBtn.disabled = false;
     cameraStopBtn.disabled = true;
@@ -114,6 +119,7 @@ async function handleStartCamera() {
 function handleStopCamera() {
   stopCamera();
   stopFpsUiLoop();
+  stopCameraInferenceLoop();
 
   // Reset UI
   cameraStartBtn.disabled = false;
@@ -420,6 +426,27 @@ function runWebcamFrameInference() {
   outputBoxElement.textContent = summaryText + renderDetectionResultText(detectionResult);
 }
 
+/**
+ * Starts running frame inference periodically at a specified frame rate.
+ * @param {number} fps - Target detections per second (e.g., 5)
+ */
+function startCameraInferenceLoop(fps = 5) {
+  stopCameraInferenceLoop(); // Clear any existing loop
+
+  const intervalMs = 1000 / fps; // 5 FPS = 200ms per frame
+  inferenceInterval = setInterval(() => {
+    if (getCameraState() === 'running' && objectDetector) {
+      runWebcamFrameInference();
+    }
+  }, intervalMs);
+}
+
+function stopCameraInferenceLoop() {
+  if (inferenceInterval) {
+    clearInterval(inferenceInterval);
+    inferenceInterval = null;
+  }
+}
 
 
 /// ACTUALLY RUNNING THIS FILE ///
