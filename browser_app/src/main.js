@@ -225,6 +225,36 @@ function renderDetectionResult(detectionResult, canvasElement) {
   });
 }
 
+/**
+ * Formats detection results into a plain-text table or structured list.
+ *
+ * @param {DetectionResult} detectionResult
+ * @returns {string} Formatted text output
+ */
+function renderDetectionResultText(detectionResult) {
+  if (!detectionResult || detectionResult.detections.length === 0) {
+    return 'No objects detected above score threshold.';
+  }
+
+  const lines = [
+    'class           confidence      location',
+    '------------------------------------------------------------------'
+  ];
+
+  detectionResult.detections.forEach((detection) => {
+    const category = detection.categories[0];
+    const label = (category?.categoryName || category?.displayName || 'Unknown').padEnd(16, ' ');
+    const score = `${((category?.score || 0) * 100).toFixed(1)}%`.padEnd(16, ' ');
+
+    const box = detection.boundingBox;
+    const location = `x: ${Math.round(box.originX)}, y: ${Math.round(box.originY)}, w: ${Math.round(box.width)}, h: ${Math.round(box.height)}`;
+
+    lines.push(`${label}${score}${location}`);
+  });
+
+  return lines.join('\n');
+}
+
 function resetImageUI() {
   if (imageWrapperElement) {
     imageWrapperElement.style.display = 'none';
@@ -352,19 +382,16 @@ function runUploadedImageInference(detector) {
 
   console.log('Detection Output:', detectionResult);
 
+  // Bbox rendering
   renderDetectionResult(
     detectionResult,
     canvasElement
   );
 
-  if (detectionResult.detections.length === 0) {
-    outputBoxElement.textContent =
-      'Inference complete. No objects detected above score threshold.';
-    return;
-  }
+  // Textual output
+  const summaryText = `Inference complete. Detected ${detectionResult.detections.length} object(s).\n\n`;
+  outputBoxElement.textContent = summaryText + renderDetectionResultText(detectionResult);
 
-  outputBoxElement.textContent =
-    `Inference complete. Detected ${detectionResult.detections.length} object(s).`;
 }
 
 /// ACTUALLY RUNNING THIS FILE ///
