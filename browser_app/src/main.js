@@ -24,6 +24,7 @@ const cameraStartBtn = document.querySelector('#camera-start-btn');
 const cameraStopBtn = document.querySelector('#camera-stop-btn');
 const cameraStatusElement = document.querySelector('#camera-status');
 const cameraFpsElement = document.querySelector('#camera-fps');
+const cameraSnapshotBtn = document.querySelector('#camera-snapshot-btn');
 
 
 /// APPLICATION STATE ///
@@ -67,6 +68,7 @@ async function startApplication() {
     // - camera
     cameraStartBtn.addEventListener('click', handleStartCamera);
     cameraStopBtn.addEventListener('click', handleStopCamera);
+    cameraSnapshotBtn.addEventListener('click', runWebcamFrameInference);
 
     console.log('ObjectDetector ready:', objectDetector);
     return objectDetector;
@@ -89,6 +91,7 @@ async function handleStartCamera() {
 
     // Successfully started
     cameraStopBtn.disabled = false;
+    cameraSnapshotBtn.disabled = false;
     cameraStatusElement.textContent = 'Camera active (running)';
 
     // Start UI update timer for rendering current FPS
@@ -96,6 +99,7 @@ async function handleStartCamera() {
   } catch (error) {
     cameraStartBtn.disabled = false;
     cameraStopBtn.disabled = true;
+    cameraSnapshotBtn.disabled = true;
 
     if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
       cameraStatusElement.textContent = 'Error: Camera access denied by user or browser.';
@@ -353,7 +357,7 @@ async function loadSelectedImage(file) {
  * no knowledge of UI rendering or where the image came from.
  *
  * @param {ObjectDetector} detector
- * @param {HTMLImageElement} imageElement
+ * @param {HTMLImageElement, HTMLVideoElement} imageElement
  * @returns {DetectionResult}
  */
 function runInference(detector, imageElement) {
@@ -393,6 +397,30 @@ function runUploadedImageInference(detector) {
   outputBoxElement.textContent = summaryText + renderDetectionResultText(detectionResult);
 
 }
+
+/**
+ * Captures the current frame from the webcam video element,
+ * runs inference through the existing detector pipeline,
+ * and renders the detection result.
+ */
+function runWebcamFrameInference() {
+  if (getCameraState() !== 'running') {
+    outputBoxElement.textContent = 'Camera is not active.';
+    return;
+  }
+
+  outputBoxElement.textContent = 'Running inference on camera frame...';
+
+  // detector.detect() accepts HTMLVideoElement directly and extracts the current frame
+  const detectionResult = runInference(objectDetector, cameraVideoElement);
+
+  console.log('Webcam Frame Detection Output:', detectionResult);
+
+  const summaryText = `[Camera Snapshot] Detected ${detectionResult.detections.length} object(s).\n\n`;
+  outputBoxElement.textContent = summaryText + renderDetectionResultText(detectionResult);
+}
+
+
 
 /// ACTUALLY RUNNING THIS FILE ///
 checkBrowser();
