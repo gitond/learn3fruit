@@ -137,8 +137,6 @@ function stopFpsUiLoop() {
   }
 }
 
-
-
 /// DISPLAYING & RENDERING FUNCTIONS ///
 // Helper to generate a consistent HSL color based on string hash
 function getLabelColor(label) {
@@ -227,6 +225,25 @@ function renderDetectionResult(detectionResult, canvasElement) {
   });
 }
 
+function resetImageUI() {
+  if (imageWrapperElement) {
+    imageWrapperElement.style.display = 'none';
+  }
+  testImageElement.src = '';
+
+  const ctx = canvasElement.getContext('2d');
+  ctx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+
+  outputBoxElement.textContent = 'Awaiting inference execution...';
+  updateRunButtonState();
+}
+
+function prepareImageUIForInference(width, height) {
+  canvasElement.width = width;
+  canvasElement.height = height;
+  imageWrapperElement.style.display = 'block';
+  updateRunButtonState();
+}
 
 /// IMAGE HANDLING FUNCTIONS ///
 function resetImageSelection() {
@@ -236,18 +253,7 @@ function resetImageSelection() {
   }
   imageReady = false;
 
-  // Hide container, leave testImageElement display rules alone
-  if (imageWrapperElement) {
-    imageWrapperElement.style.display = 'none';
-  }
-  testImageElement.src = '';
-
-  // Reset canvas
-  const ctx = canvasElement.getContext('2d');
-  ctx.clearRect(0, 0, canvasElement.width, canvasElement.height);
-
-  outputBoxElement.textContent = 'Awaiting inference execution...';
-  updateRunButtonState();
+  resetImageUI();
 }
 
 function handleImageSelection(event) {
@@ -268,28 +274,46 @@ function handleImageSelection(event) {
   loadSelectedImage(file);
 }
 
-function loadSelectedImage(file) {
+/**
+ * Loads a File object into an HTMLImageElement and returns a Object URL reference.
+ * Pure data/DOM-node setup without UI status updates.
+ */
+function loadImageElement(file, imageElement) {
+  return new Promise((resolve, reject) => {
+    const objectUrl = URL.createObjectURL(file);
+
+    imageElement.onload = () => {
+      resolve({ objectUrl, naturalWidth: imageElement.naturalWidth, naturalHeight: imageElement.naturalHeight });
+    };
+
+    imageElement.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error('Failed to load image into element.'));
+    };
+
+    imageElement.src = objectUrl;
+  });
+}
+
+async function loadSelectedImage(file) {
   resetImageSelection();
 
-  currentObjectUrl = URL.createObjectURL(file);
-  testImageElement.src = currentObjectUrl;
+  try {
+    const { objectUrl, naturalWidth, naturalHeight } = await loadImageElement(file, testImageElement);
 
-  testImageElement.onload = () => {
+    // Store URL reference for cleanup later
+    currentObjectUrl = objectUrl;
     imageReady = true;
 
-    // Match internal canvas buffer resolution to raw image resolution
-    canvasElement.width = testImageElement.naturalWidth;
-    canvasElement.height = testImageElement.naturalHeight;
-
-    imageWrapperElement.style.display = 'block';
-    updateRunButtonState();
-  };
-
-  testImageElement.onerror = () => {
+    // Update UI state with loaded image properties
+    prepareImageUIForInference(naturalWidth, naturalHeight);
+  } catch (error) {
     resetImageSelection();
     outputBoxElement.textContent = 'Failed to load selected image.';
-  };
+  }
 }
+
+
 
 /// INFERENCE STUFF ///
 /**
