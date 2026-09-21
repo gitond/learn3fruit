@@ -33,6 +33,13 @@ let currentObjectUrl = null;
 let imageReady = false;
 let fpsAnimationInterval = null; // Used to update the UI FPS reading on a timer
 let inferenceInterval = null; // Timer reference for periodic camera inference (inference fps)
+let measurementInterval = null;
+
+let samplingCount = 0;
+let inferenceCount = 0;
+let inferenceLatencyMs = 0;
+let measurementWindowStart = null;
+
 function updateRunButtonState() { runButton.disabled = !(objectDetector && imageReady); }
 
 
@@ -82,6 +89,54 @@ async function startApplication() {
 }
 
 
+/// WEBCAM INFERENCE MEASUREMENTS ///
+
+function startInferenceMeasurements() {
+  stopInferenceMeasurements();
+
+  samplingCount = 0;
+  inferenceCount = 0;
+  inferenceLatencyMs = 0;
+  measurementWindowStart = performance.now();
+
+  measurementInterval = setInterval(() => {
+    const now = performance.now();
+    const elapsedSeconds = (now - measurementWindowStart) / 1000;
+
+    if (elapsedSeconds <= 0) {
+      return;
+    }
+
+    const samplingFps = samplingCount / elapsedSeconds;
+    const inferenceFps = inferenceCount / elapsedSeconds;
+
+    console.log(
+      `[Webcam measurements] ` +
+      `Camera: ${getCameraFps().toFixed(2)} FPS | ` +
+      `Sampling: ${samplingFps.toFixed(2)} FPS | ` +
+      `Inference: ${inferenceFps.toFixed(2)} FPS | ` +
+      `Latency: ${inferenceLatencyMs.toFixed(2)} ms`
+    );
+
+    samplingCount = 0;
+    inferenceCount = 0;
+    measurementWindowStart = now;
+  }, 1000);
+}
+
+function stopInferenceMeasurements() {
+  if (measurementInterval) {
+    clearInterval(measurementInterval);
+    measurementInterval = null;
+  }
+
+  samplingCount = 0;
+  inferenceCount = 0;
+  inferenceLatencyMs = 0;
+  measurementWindowStart = null;
+}
+
+
 /// WEBCAM HANDLING ///
 async function handleStartCamera() {
   // Update button states & status text during request
@@ -100,6 +155,7 @@ async function handleStartCamera() {
     startFpsUiLoop();
 
     // Start running inference at specified FPS
+    startInferenceMeasurements();
     startCameraInferenceLoop(5);
   } catch (error) {
     cameraStartBtn.disabled = false;
@@ -120,6 +176,7 @@ function handleStopCamera() {
   stopCamera();
   stopFpsUiLoop();
   stopCameraInferenceLoop();
+  stopInferenceMeasurements();
 
   // Reset UI
   cameraStartBtn.disabled = false;
@@ -417,10 +474,17 @@ function runWebcamFrameInference() {
 
   outputBoxElement.textContent = 'Running inference on camera frame...';
 
+  const inferenceStart = performance.now();
+
   // detector.detect() accepts HTMLVideoElement directly and extracts the current frame
   const detectionResult = runInference(objectDetector, cameraVideoElement);
 
-  console.log('Webcam Frame Detection Output:', detectionResult);
+  const inferenceEnd = performance.now();
+  inferenceLatencyMs = inferenceEnd - inferenceStart;
+
+  inferenceCount++;
+
+  console.log(`[Webcam inference] ${inferenceLatencyMs.toFixed(2)} ms`, detectionResult);
 
   const summaryText = `[Camera Snapshot] Detected ${detectionResult.detections.length} object(s).\n\n`;
   outputBoxElement.textContent = summaryText + renderDetectionResultText(detectionResult);
@@ -436,6 +500,7 @@ function startCameraInferenceLoop(fps = 5) {
   const intervalMs = 1000 / fps; // 5 FPS = 200ms per frame
   inferenceInterval = setInterval(() => {
     if (getCameraState() === 'running' && objectDetector) {
+      samplingCount++;
       runWebcamFrameInference();
     }
   }, intervalMs);
