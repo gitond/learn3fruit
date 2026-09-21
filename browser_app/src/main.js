@@ -27,6 +27,9 @@ const cameraStatusElement = document.querySelector('#camera-status');
 // measurement related
 const measurementRenderingsElement = document.querySelector('#measurement-renderings');
 const webcamOutputBoxElement = document.querySelector('#webcam-output-box');
+const recordCsvToggle = document.querySelector('#record-csv-toggle');
+const downloadCsvBtn = document.querySelector('#download-csv-btn');
+const recordStatusElement = document.querySelector('#record-status');
 
 /// APPLICATION STATE ///
 let objectDetector = null;
@@ -40,6 +43,9 @@ let samplingCount = 0;
 let inferenceCount = 0;
 let inferenceLatencyMs = 0;
 let measurementWindowStart = null;
+let isRecording = false;
+let recordedData = []; // Stores array of measurement objects
+let sessionStartTime = null;
 
 function updateRunButtonState() { runButton.disabled = !(objectDetector && imageReady); }
 
@@ -75,6 +81,8 @@ async function startApplication() {
     imageInputElement.addEventListener('change', handleImageSelection);
     runButton.addEventListener('click', () => runUploadedImageInference(objectDetector));
     updateRunButtonState();
+    recordCsvToggle.addEventListener('change', handleToggleRecording);
+    downloadCsvBtn.addEventListener('click', downloadCsvFile);
     // - camera
     cameraStartBtn.addEventListener('click', handleStartCamera);
     cameraStopBtn.addEventListener('click', handleStopCamera);
@@ -103,12 +111,24 @@ function startInferenceMeasurements() {
     const now = performance.now();
     const elapsedSeconds = (now - measurementWindowStart) / 1000;
 
-    if (elapsedSeconds <= 0) {
-      return;
-    }
+    if (elapsedSeconds <= 0) { return; }
 
+    const cameraFps = getCameraFps();
     const samplingFps = samplingCount / elapsedSeconds;
     const inferenceFps = inferenceCount / elapsedSeconds;
+
+    if (isRecording) {
+      recordedData.push({
+        timestamp: new Date().toISOString(),
+        cameraFps: Number(cameraFps.toFixed(2)),
+        samplingFps: Number(samplingFps.toFixed(2)),
+        inferenceFps: Number(inferenceFps.toFixed(2)),
+        latencyMs: Number(inferenceLatencyMs.toFixed(2))
+      });
+      if (recordStatusElement) {
+        recordStatusElement.textContent = `Recording... (${recordedData.length} samples)`;
+      }
+    }
 
     console.log(
       `[Webcam measurements] ` +
@@ -131,11 +151,63 @@ function stopInferenceMeasurements() {
     clearInterval(measurementInterval);
     measurementInterval = null;
   }
-
   samplingCount = 0;
   inferenceCount = 0;
   inferenceLatencyMs = 0;
   measurementWindowStart = null;
+}
+
+function handleToggleRecording(event) {
+    isRecording = event.target.checked;
+
+    if (isRecording) {
+        // Reset buffers for new recording session
+        recordedData = [];
+        sessionStartTime = new Date();
+        downloadCsvBtn.disabled = true;
+        recordStatusElement.textContent = 'Recording started...';
+    } else {
+        // Stopped recording
+        const sampleCount = recordedData.length;
+        if (sampleCount > 0) {
+            downloadCsvBtn.disabled = false;
+            recordStatusElement.textContent = `Stopped. ${sampleCount} samples ready.`;
+        } else {
+            recordStatusElement.textContent = 'Stopped (no samples recorded).';
+        }
+    }
+}
+
+function downloadCsvFile() {
+    if (recordedData.length === 0) return;
+
+    // 1. Build CSV content string
+    const headers = ['Timestamp', 'Camera_FPS', 'Sampling_FPS', 'Inference_FPS', 'Latency_MS'];
+    const rows = recordedData.map(d =>
+        `"${d.timestamp}",${d.cameraFps},${d.samplingFps},${d.inferenceFps},${d.latencyMs}`
+    );
+    const csvContent = [headers.join(','), ...rows].join('\n');
+
+    // 2. Format ISO Timestamp for file name: fps_YYYYMMDD_HHMMSS.csv
+    const ts = sessionStartTime || new Date();
+    const pad = (n) => String(n).padStart(2, '0');
+    const timeStr = `${ts.getFullYear()}${pad(ts.getMonth() + 1)}${pad(ts.getDate())}_${pad(ts.getHours())}${pad(ts.getMinutes())}${pad(ts.getSeconds())}`;
+    const filename = `fps_${timeStr}.csv`;
+
+    // 3. Create downloadable Blob URL
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+
+    // 4. Trigger browser download
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.setAttribute('download', filename);
+    document.body.appendChild(anchor);
+    anchor.click();
+
+    // 5. Cleanup
+    document.body.removeChild(anchor);
+    URL.revokeObjectURL(url);
 }
 
 
@@ -157,7 +229,7 @@ async function handleStartCamera() {
 
     // Start running inference at specified FPS
     startInferenceMeasurements();
-    startCameraInferenceLoop(5);
+    startCameraInferenceLoop(14);
   } catch (error) {
     cameraStartBtn.disabled = false;
     cameraStopBtn.disabled = true;
@@ -186,6 +258,12 @@ function handleStopCamera() {
   webcamOutputBoxElement.textContent = 'Camera stopped';
 
   measurementRenderingsElement.textContent = 'Awaiting measurements...';
+
+  // Reset recording
+  if (isRecording) {
+    recordCsvToggle.checked = false;
+    handleToggleRecording({ target: { checked: false } });
+  }
 }
 
 function startFpsUiLoop() {

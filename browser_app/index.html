@@ -57,7 +57,7 @@
         }
 
         #webcam-output-box {
-            min-height: 10em;
+            min-height: 7em;
             box-sizing: border-box;
         }
     </style>
@@ -100,6 +100,15 @@
         </dl>
 
         <h3>Current numbers</h3>
+
+        <div>
+            <label>
+                <input type="checkbox" id="record-csv-toggle"> Record Measurements
+            </label>
+            <button id="download-csv-btn" disabled>Download CSV</button>
+            <span id="record-status" style="margin-left: 0.5rem; font-size: 0.9em; color: #666;"></span>
+        </div>
+
         <pre id="measurement-renderings">Awaiting measurements...</pre>
         <pre>------------------------------------------------------------------</pre>
         <pre id="webcam-output-box">Awaiting inference execution...</pre>
