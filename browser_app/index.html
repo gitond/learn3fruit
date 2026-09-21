@@ -47,6 +47,19 @@
         .camera-controls button {
             margin-right: 0.5rem;
         }
+
+        #file-inference-section {
+            display: none; /* Change if you want to run file inference - everything related to that should still be active on the js side of things */
+        }
+
+        #env-section {
+            display: none; /* Change if you want debug info - everything related to that should still be active on the js side of things */
+        }
+
+        #webcam-output-box {
+            min-height: 10em;
+            box-sizing: border-box;
+        }
     </style>
 </head>
 
@@ -56,7 +69,7 @@
 
         <p id="status">Starting application...</p>
 
-        <section>
+        <section id="env-section">
             <h2>Environment</h2>
             <dl>
                 <dt>Browser</dt>
@@ -70,9 +83,30 @@
             </dl>
         </section>
 
+        <!-- Webcam section -->
+        <h2>Webcam inference</h2>
+        <div class="camera-container">
+            <video id="camera-video" autoplay playsinline></video>
+        </div>
+
+        <div class="camera-controls">
+            <button id="camera-start-btn">Start Camera</button>
+            <button id="camera-stop-btn" disabled>Stop Camera</button>
+        </div>
+
+        <dl>
+            <dt>Camera status</dt>
+            <dd id="camera-status">Camera not started</dd>
+        </dl>
+
+        <h3>Current numbers</h3>
+        <pre id="measurement-renderings">Awaiting measurements...</pre>
+        <pre>------------------------------------------------------------------</pre>
+        <pre id="webcam-output-box">Awaiting inference execution...</pre>
+
         <!-- Inference test, image upload, canvas overlay (bbox rendering) -->
-        <section>
-            <h2>Inference Test</h2>
+        <section id="file-inference-section">
+            <h2>File Inference</h2>
 
             <div style="margin-bottom: 1rem;">
                 <label for="image-input">Select JPEG Image: </label>
@@ -86,29 +120,7 @@
 
             <button id="run-btn" disabled>Run Inference</button>
 
-            <h3>Detections Output</h3>
-            <pre id="output-box">Awaiting inference execution...</pre>
         </section>
-
-        <!-- Webcam section (first test) -->
-        <h2>Webcam renderer (first version)</h2>
-        <div class="camera-container">
-            <video id="camera-video" autoplay playsinline></video>
-        </div>
-
-        <div class="camera-controls">
-            <button id="camera-start-btn">Start Camera</button>
-            <button id="camera-stop-btn" disabled>Stop Camera</button>
-            <button id="camera-snapshot-btn" disabled>Run Inference on Frame</button>
-        </div>
-
-        <dl>
-            <dt>Camera status</dt>
-            <dd id="camera-status">Camera not started</dd>
-
-            <dt>Camera FPS</dt>
-            <dd id="camera-fps">—</dd>
-        </dl>
 
     </main>
 
