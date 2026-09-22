@@ -5,72 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
     <title>CVNN Browser App</title>
-    <style>
-        .image-container {
-            position: relative;
-            width: 100%;
-            margin-bottom: 1rem;
-            display: none; /* Controlled entirely via JS on #image-wrapper */
-        }
 
-        #test-image {
-            width: 100%;
-            height: auto;
-        }
-
-        #output-canvas {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            pointer-events: none; /* Lets mouse clicks pass through to image if needed */
-        }
-
-        .camera-container {
-            position: relative;
-            width: 100%;
-            max-width: 800px;
-            margin-bottom: 1rem;
-        }
-
-        #camera-video {
-            display: block;
-            width: 100%;
-            height: auto;
-            background: #000;
-        }
-
-        #webcam-output-canvas {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            pointer-events: none;
-        }
-
-        .camera-controls {
-            margin-top: 0.75rem;
-        }
-
-        .camera-controls button {
-            margin-right: 0.5rem;
-        }
-
-        #file-inference-section {
-            display: none; /* Change if you want to run file inference - everything related to that should still be active on the js side of things */
-        }
-
-        #env-section {
-            display: none; /* Change if you want debug info - everything related to that should still be active on the js side of things */
-        }
-
-        #webcam-output-box {
-            min-height: 7em;
-            box-sizing: border-box;
-        }
-    </style>
+    <link rel="stylesheet" href="src/style.css">
 </head>
 
 <body>

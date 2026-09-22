@@ -1,0 +1,219 @@
+---
+title: "Tests on running inference on the mediapipe .tflite obd model inference tool web for l3f"
+author: "Botond Ortutay"
+output: pdf_document
+---
+
+### Situation overview
+
+This document is a summary of tests run on the mediapipe .tflite obd model inference web tool I built for the l3f project. It aims to confirm the web tool is reliable & usable across multiple hardware options without crashing & misbehavior. This is a summary of multiple tests
+
+### Setup
+
+#### Tests
+
+For every test we record the following environment variables:
+
+ - device
+ - OS
+ - browser + version
+ - camera
+ - target sampling rate
+ - model
+ - delegate
+ - score treshold
+ - goal of test
+ - duration of test
+ - special notes on env
+
+, where 
+
+ - **browser + version** is (`index.html` -> Environment -> Browser) rendering
+ - **target sampling rate** is the `fps` parameter given to `startCameraInferenceLoop()` when called from within `handleStartCamera()` in `src/main.js`
+ - **model** is: `DIRNAME` where `data_and_training/models/DIRNAME/model.tflite` is identical to `browser_app/public/models/model.tflite`; Test: `cmp browser_app/public/models/model.tflite data_and_training/models/DIRNAME/model.tflite` -> silent exit, no `browser_app/public/models/model.tflite data_and_training/models/DIRNAME/model.tflite differ: byte xx, line y` type output.
+ - **delegate** is the `delegate` parameter given to `ObjectDetector.createFromOptions` in model loading/compilation section of `try` block of `startApplication()` function in `src/main.js`
+ - **score treshold** is the `scoreThreshold` parameter given to `ObjectDetector.createFromOptions` in model loading/compilation section of `try` block of `startApplication()` function in `src/main.js`
+
+and we collect
+
+ - csv formatted measurements (camera fpc, sampling fps, inference fps, inference latency) & appropriate visualisations
+ - UI beahvior observations
+ - browser command line prints of note
+ - other notes
+
+, where
+
+**browser command line prints of note** means we ignore per-detection/per-measurement prints, but note any execution time errors.
+
+#### Technical
+
+Render this document by running `Rscript -e "rmarkdown::render('reporting.Rmd')"` From `browser_app/measurements/`
+
+Libraries:
+
+```{r}
+# For data manipulation
+suppressPackageStartupMessages(library(dplyr)) # <- Don't print warning on import
+library(tidyr)
+
+# For plotting & rendering
+library(ggplot2)
+library(scales)
+```
+
+Diagram drawing function (edited for Rmd use from `data_and_training/devtools/fpsdiagram.R`):
+
+```{r}
+fpsdiagram <- function(input_filename) {
+
+  if (!file.exists(input_filename)) {
+    stop(
+      paste0("Error: File '", input_filename, "' not found."),
+      call. = FALSE
+    )
+  }
+
+  df <- read.csv(input_filename, stringsAsFactors = FALSE)
+
+  df$Timestamp <- as.POSIXct(
+    df$Timestamp,
+    format = "%Y-%m-%dT%H:%M:%OSZ",
+    tz = "UTC"
+  )
+
+  df_long <- df %>%
+    pivot_longer(
+      cols = c(Camera_FPS, Sampling_FPS, Inference_FPS),
+      names_to = "Metric",
+      values_to = "FPS"
+    )
+
+  p <- ggplot(
+    df_long,
+    aes(x = Timestamp, y = FPS, color = Metric)
+  ) +
+    geom_line(linewidth = 1) +
+    geom_point(size = 2) +
+    scale_x_datetime(labels = date_format("%H:%M:%S")) +
+    labs(
+      title = "Performance Monitoring Metrics",
+      subtitle = paste("File:", input_filename),
+      x = "Timestamp (UTC)",
+      y = "FPS",
+      color = "Metric"
+    ) +
+    theme_minimal(base_size = 12) +
+    theme(
+      legend.position = "bottom",
+      axis.text.x = element_text(angle = 45, hjust = 1)
+    )
+
+  print(p)
+}
+```
+
+### Test series 1: Finding the optimal sampling rate
+
+#### Test 1.1 starting from a low baseline
+
+##### Environment
+
+ - device: Self built PC (AMD Ryzen 7 3700X, 16GB RAM, Nvidia Geforce GTX 1660 Super)
+ - OS: Fedora Linux 42 (Workstation Edition)
+ - browser + version: Mozilla/5.0 (X11; Linux x86_64; rv:143.0) Gecko/20100101 Firefox/143.0
+ - camera: Logitech, Inc. C920 HD Pro Webcam
+ - target sampling rate: 5
+ - model: `ssd_plus_mobilenet_v2_l3f_20260807_225848`
+ - delegate: CPU
+ - score treshold: 0.35
+ - goal of test: baseline establishment
+ - duration of test: ~1 min
+ - special notes on env: -
+
+##### Results
+
+```{r}
+fpsdiagram("fps_sr5_20260921_212518.csv")
+``` 
+
+No record of browser command line prints.  
+
+Notes: `Inference_FPS` matches `Sampling_FPS`, significantly below `Camera_FPS`, can raise.  
+
+#### Test 1.2 raising to 10 fps sampling
+
+##### Environment
+
+ - device: Self built PC (AMD Ryzen 7 3700X, 16GB RAM, Nvidia Geforce GTX 1660 Super)
+ - OS: Fedora Linux 42 (Workstation Edition)
+ - browser + version: Mozilla/5.0 (X11; Linux x86_64; rv:143.0) Gecko/20100101 Firefox/143.0
+ - camera: Logitech, Inc. C920 HD Pro Webcam
+ - target sampling rate: 10
+ - model: `ssd_plus_mobilenet_v2_l3f_20260807_225848`
+ - delegate: CPU
+ - score treshold: 0.35
+ - goal of test: baseline establishment
+ - duration of test: ~1 min
+ - special notes on env: -
+
+##### Results
+
+```{r}
+fpsdiagram("fps_sr10_20260921_214321.csv")
+``` 
+
+No record of browser command line prints.  
+
+Notes: `Inference_FPS` matches `Sampling_FPS`, still below `Camera_FPS`, can raise.
+
+#### Test 1.3 reaching camera fps
+
+##### Environment
+
+ - device: Self built PC (AMD Ryzen 7 3700X, 16GB RAM, Nvidia Geforce GTX 1660 Super)
+ - OS: Fedora Linux 42 (Workstation Edition)
+ - browser + version: Mozilla/5.0 (X11; Linux x86_64; rv:143.0) Gecko/20100101 Firefox/143.0
+ - camera: Logitech, Inc. C920 HD Pro Webcam
+ - target sampling rate: 15
+ - model: `ssd_plus_mobilenet_v2_l3f_20260807_225848`
+ - delegate: CPU
+ - score treshold: 0.35
+ - goal of test: baseline establishment
+ - duration of test: ~1 min
+ - special notes on env: -
+
+##### Results
+
+```{r}
+fpsdiagram("fps_sr15_20260921_214710.csv")
+``` 
+
+No record of browser command line prints.  
+
+Notes: `Inference_FPS` & `Sampling_FPS` now occasionally abouve `Camera_FPS`, will lower.  
+
+#### Test 1.4 achieving stability
+
+##### Environment
+
+ - device: Self built PC (AMD Ryzen 7 3700X, 16GB RAM, Nvidia Geforce GTX 1660 Super)
+ - OS: Fedora Linux 42 (Workstation Edition)
+ - browser + version: Mozilla/5.0 (X11; Linux x86_64; rv:143.0) Gecko/20100101 Firefox/143.0
+ - camera: Logitech, Inc. C920 HD Pro Webcam
+ - target sampling rate: 14
+ - model: `ssd_plus_mobilenet_v2_l3f_20260807_225848`
+ - delegate: CPU
+ - score treshold: 0.35
+ - goal of test: baseline establishment
+ - duration of test: ~1 min
+ - special notes on env: -
+
+##### Results
+
+```{r}
+fpsdiagram("fps_sr14_20260921_215016.csv")
+``` 
+
+No record of browser command line prints.  
+
+Notes: `Inference_FPS` & `Sampling_FPS` now stable below `Camera_FPS`, not surpassing it. NOTE: `Latency_MS` (how long it actually takes to complete an inference) ranges from 46 to 49. It is still realistic to raise it. We're bottlenecked by `Camera_FPS` on this hardware.  

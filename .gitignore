@@ -2,6 +2,7 @@
 *.log
 browser_app/.vite/
 browser_app/dist/
+browser_app/minimal_host_and_deploy/
 browser_app/public/test_image.jpg
 data_and_training/*/dl*.txt
 !data_and_training/data/l3fds/*/dl*.txt
