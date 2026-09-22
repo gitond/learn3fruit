@@ -20,6 +20,7 @@ const outputBoxElement = document.querySelector('#output-box');
 
 // camera related
 const cameraVideoElement = document.querySelector('#camera-video');
+const webcamCanvasElement = document.querySelector('#webcam-output-canvas');
 const cameraStartBtn = document.querySelector('#camera-start-btn');
 const cameraStopBtn = document.querySelector('#camera-stop-btn');
 const cameraStatusElement = document.querySelector('#camera-status');
@@ -224,6 +225,9 @@ async function handleStartCamera() {
     cameraStopBtn.disabled = false;
     cameraStatusElement.textContent = 'Camera active (running)';
 
+    // Mapping camera canvas coordinate system to actual webcam frames
+    prepareWebcamCanvas();
+
     // Start UI update timer for rendering current FPS
     startFpsUiLoop();
 
@@ -258,6 +262,15 @@ function handleStopCamera() {
   webcamOutputBoxElement.textContent = 'Camera stopped';
 
   measurementRenderingsElement.textContent = 'Awaiting measurements...';
+
+  webcamCanvasElement
+    .getContext('2d')
+    .clearRect(
+      0,
+      0,
+      webcamCanvasElement.width,
+      webcamCanvasElement.height
+    );
 
   // Reset recording
   if (isRecording) {
@@ -419,6 +432,18 @@ function prepareImageUIForInference(width, height) {
   canvasElement.height = height;
   imageWrapperElement.style.display = 'block';
   updateRunButtonState();
+}
+
+function prepareWebcamCanvas() {
+  if (
+    cameraVideoElement.videoWidth === 0 ||
+    cameraVideoElement.videoHeight === 0
+  ) {
+    return;
+  }
+
+  webcamCanvasElement.width = cameraVideoElement.videoWidth;
+  webcamCanvasElement.height = cameraVideoElement.videoHeight;
 }
 
 function updateMeasurementRendering() {
@@ -594,6 +619,12 @@ function runWebcamFrameInference() {
   inferenceCount++;
 
   console.log(`[Webcam inference] ${inferenceLatencyMs.toFixed(2)} ms`, detectionResult);
+
+  // Visual output
+  renderDetectionResult(
+    detectionResult,
+    webcamCanvasElement
+  );
 
   const summaryText = `[Camera Snapshot] Detected ${detectionResult.detections.length} object(s).\n\n`;
   webcamOutputBoxElement.textContent = summaryText + renderDetectionResultText(detectionResult);

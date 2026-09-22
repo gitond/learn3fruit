@@ -28,6 +28,7 @@
         }
 
         .camera-container {
+            position: relative;
             width: 100%;
             max-width: 800px;
             margin-bottom: 1rem;
@@ -38,6 +39,15 @@
             width: 100%;
             height: auto;
             background: #000;
+        }
+
+        #webcam-output-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
         }
 
         .camera-controls {
@@ -87,6 +97,7 @@
         <h2>Webcam inference</h2>
         <div class="camera-container">
             <video id="camera-video" autoplay playsinline></video>
+            <canvas id="webcam-output-canvas"></canvas>
         </div>
 
         <div class="camera-controls">
