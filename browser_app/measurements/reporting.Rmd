@@ -10,7 +10,7 @@ This document is a summary of tests run on the mediapipe .tflite obd model infer
 
 ### Setup
 
-#### Tests
+#### Tests  
 
 For every test we record the following environment variables:
 
@@ -26,7 +26,7 @@ For every test we record the following environment variables:
  - duration of test
  - special notes on env
 
-, where 
+, where
 
  - **browser + version** is (`index.html` -> Environment -> Browser) rendering
  - **target sampling rate** is the `fps` parameter given to `startCameraInferenceLoop()` when called from within `handleStartCamera()` in `src/main.js`
@@ -45,7 +45,7 @@ and we collect
 
 **browser command line prints of note** means we ignore per-detection/per-measurement prints, but note any execution time errors.
 
-#### Technical
+#### Technical  
 
 Render this document by running `Rscript -e "rmarkdown::render('reporting.Rmd')"` From `browser_app/measurements/`
 
@@ -130,11 +130,11 @@ fpsdiagram <- function(input_filename) {
  - duration of test: ~1 min
  - special notes on env: -
 
-##### Results
+##### Results  
 
 ```{r}
 fpsdiagram("fps_sr5_20260921_212518.csv")
-``` 
+```
 
 No record of browser command line prints.  
 
@@ -152,15 +152,15 @@ Notes: `Inference_FPS` matches `Sampling_FPS`, significantly below `Camera_FPS`,
  - model: `ssd_plus_mobilenet_v2_l3f_20260807_225848`
  - delegate: CPU
  - score treshold: 0.35
- - goal of test: baseline establishment
+ - goal of test: baseline establichment
  - duration of test: ~1 min
  - special notes on env: -
 
-##### Results
+##### Results  
 
 ```{r}
 fpsdiagram("fps_sr10_20260921_214321.csv")
-``` 
+```
 
 No record of browser command line prints.  
 
@@ -182,11 +182,11 @@ Notes: `Inference_FPS` matches `Sampling_FPS`, still below `Camera_FPS`, can rai
  - duration of test: ~1 min
  - special notes on env: -
 
-##### Results
+##### Results  
 
 ```{r}
 fpsdiagram("fps_sr15_20260921_214710.csv")
-``` 
+```
 
 No record of browser command line prints.  
 
@@ -208,12 +208,118 @@ Notes: `Inference_FPS` & `Sampling_FPS` now occasionally abouve `Camera_FPS`, wi
  - duration of test: ~1 min
  - special notes on env: -
 
-##### Results
+##### Results  
 
 ```{r}
 fpsdiagram("fps_sr14_20260921_215016.csv")
-``` 
+```
 
 No record of browser command line prints.  
 
 Notes: `Inference_FPS` & `Sampling_FPS` now stable below `Camera_FPS`, not surpassing it. NOTE: `Latency_MS` (how long it actually takes to complete an inference) ranges from 46 to 49. It is still realistic to raise it. We're bottlenecked by `Camera_FPS` on this hardware.  
+
+### Test series 2: On different devices
+
+#### Test 2.1 on an old laptop (Thinkpad T420)
+
+##### Environment
+
+ - device: Thinkpad T420 (Intel Core i5-2520M, 12GB RAM, no dedicated GPU)
+ - OS: Lubuntu 25.04
+ - browser + version: Mozilla/5.0 (X11; Linux x86_64; rv:150.0) Gecko/20100101 Firefox/150.0
+ - camera: Integrated Camera
+ - target sampling rate: 14
+ - model: `ssd_plus_mobilenet_v2_l3f_20260807_225848`
+ - delegate: CPU
+ - score treshold: 0.35
+ - goal of test: baseline on laptop
+ - duration of test: ~1 min
+ - special notes on env: -
+
+##### Results  
+
+```{r}
+fpsdiagram("fps_t420_20260922_194937.csv")
+```
+
+Nothing noteworthy in browser commandline. Only `[Webcam inference]` and `[Webcam measurements]` prints.  
+
+Notes: `Camera_FPS` ranges from below 8 to just around 10. `Sampling_FPS` & `Inferece_FPS` hovers around 10. `Latency_MS` ranges from 97 to 103. The limiting factor with this setup is still `Camera_FPS`, but it's noticably lower than on other computer. Will set sampling rate to 7 to achieve stability.
+
+#### Test 2.2 T420, lowered sample rate
+
+##### Environment
+
+ - device: Thinkpad T420 (Intel Core i5-2520M, 12GB RAM, no dedicated GPU)
+ - OS: Lubuntu 25.04
+ - browser + version: Mozilla/5.0 (X11; Linux x86_64; rv:150.0) Gecko/20100101 Firefox/150.0
+ - camera: Integrated Camera
+ - target sampling rate: 7
+ - model: `ssd_plus_mobilenet_v2_l3f_20260807_225848`
+ - delegate: CPU
+ - score treshold: 0.35
+ - goal of test: baseline on laptop
+ - duration of test: ~1 min
+ - special notes on env: -
+
+##### Results  
+
+```{r}
+fpsdiagram("fps_t420_sr7_20260922_204808.csv")
+```
+
+Nothing noteworthy in browser commandline. Only `[Webcam inference]` and `[Webcam measurements]` prints.  
+
+Notes: `Camera_FPS` suddenly jumped to around 15. So the limiting factor probably wasn't the `Camera_FPS` but the inference. Inferences now range from 98 to 114, which is unusual. Trying to reach a slightly better baseline at 8 fps.
+
+#### Test 2.3 T420, attempting to reach a better baseline at 8fps
+
+##### Environment
+
+ - device: Thinkpad T420 (Intel Core i5-2520M, 12GB RAM, no dedicated GPU)
+ - OS: Lubuntu 25.04
+ - browser + version: Mozilla/5.0 (X11; Linux x86_64; rv:150.0) Gecko/20100101 Firefox/150.0
+ - camera: Integrated Camera
+ - target sampling rate: 8
+ - model: `ssd_plus_mobilenet_v2_l3f_20260807_225848`
+ - delegate: CPU
+ - score treshold: 0.35
+ - goal of test: baseline on laptop
+ - duration of test: ~1 min
+ - special notes on env: -
+
+##### Results  
+
+```{r}
+fpsdiagram("fps_t420_sr8_20260922_213934.csv")
+```
+
+Nothing noteworthy in browser commandline. Only `[Webcam inference]` and `[Webcam measurements]` prints.  
+
+Notes: `Camera_FPS` behaves in a weird & unexpected manner; Spikes reach over 20, pits are at inference/sampling fps. Rates. Inference latency range is huge (96 to 115), but a huge portion of it is around 100-105, with only a few exceptions at the tails. The results for this test show that it's better to keep using 7 fps sampling on laptop still. So that is my laptop baseline from now on. Next I will try whether or not changing from the integrated camera to an external webcam has any effect on anything. The hypothesis is no.
+
+#### Test 2.4 T420, changing the camera
+
+##### Environment
+
+ - device: Thinkpad T420 (Intel Core i5-2520M, 12GB RAM, no dedicated GPU)
+ - OS: Lubuntu 25.04
+ - browser + version: Mozilla/5.0 (X11; Linux x86_64; rv:150.0) Gecko/20100101 Firefox/150.0
+ - camera: Logitech, Inc. C920 HD Pro Webcam
+ - target sampling rate: 7
+ - model: `ssd_plus_mobilenet_v2_l3f_20260807_225848`
+ - delegate: CPU
+ - score treshold: 0.35
+ - goal of test: seeing the affect of changing the camera
+ - duration of test: ~1 min
+ - special notes on env: -
+
+##### Results  
+
+```{r}
+fpsdiagram("fps_t420_logitech_base.csv")
+```
+
+Nothing noteworthy in browser commandline. Only `[Webcam inference]` and `[Webcam measurements]` prints.  
+
+Notes: Contrary to my expectations, there is a wild jump in `Camera_FPS`. All values are now over 15 fps, meaning that sampling rate can be increased. `Latency_MS` ranges from 101 to 112. This prompts two new investigations: sr8 and sr14 on t420+logitech
