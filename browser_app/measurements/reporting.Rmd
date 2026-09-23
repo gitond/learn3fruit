@@ -323,3 +323,55 @@ fpsdiagram("fps_t420_logitech_base.csv")
 Nothing noteworthy in browser commandline. Only `[Webcam inference]` and `[Webcam measurements]` prints.  
 
 Notes: Contrary to my expectations, there is a wild jump in `Camera_FPS`. All values are now over 15 fps, meaning that sampling rate can be increased. `Latency_MS` ranges from 101 to 112. This prompts two new investigations: sr8 and sr14 on t420+logitech
+
+#### Test 2.5 T420, trying higher framerate with camera
+
+##### Environment
+
+ - device: Thinkpad T420 (Intel Core i5-2520M, 12GB RAM, no dedicated GPU)
+ - OS: Lubuntu 25.04
+ - browser + version: Mozilla/5.0 (X11; Linux x86_64; rv:150.0) Gecko/20100101 Firefox/150.0
+ - camera: Logitech, Inc. C920 HD Pro Webcam
+ - target sampling rate: 14
+ - model: `ssd_plus_mobilenet_v2_l3f_20260807_225848`
+ - delegate: CPU
+ - score treshold: 0.35
+ - goal of test: attempting to establish new baseline on t420 with dedicated camera
+ - duration of test: ~1 min
+ - special notes on env: -
+
+##### Results  
+
+```{r}
+fpsdiagram("fps_t420_logitech_sr14.csv")
+```
+
+Nothing noteworthy in browser commandline. Only `[Webcam inference]` and `[Webcam measurements]` prints.  
+
+Notes: As we expected, the hardware is unable to produce a sampling rate of 14, with `Sampling_FPS` moving around $9.75$. But lowest tips are still above $9.25$. Maybe it's worth to test if 9 is an acceptable sampling rate on t420+logitech, and only move test sr8 if we find 9 is not an acceptable baseline. For some reason `Camera_FPS` is below `Inference_FPS` now when we stress the system with a high sr target. The hypothesis that `Camera_FPS` is independent of the other systems seems to be wrong. `Latency_MS` ranges from 96 to 107, which would indicate an around 10 ms `Sampling_FPS`
+
+#### Test 2.6 T420, attempting to establish sr9 baseline
+
+##### Environment
+
+ - device: Thinkpad T420 (Intel Core i5-2520M, 12GB RAM, no dedicated GPU)
+ - OS: Lubuntu 25.04
+ - browser + version: Mozilla/5.0 (X11; Linux x86_64; rv:150.0) Gecko/20100101 Firefox/150.0
+ - camera: Logitech, Inc. C920 HD Pro Webcam
+ - target sampling rate: 9
+ - model: `ssd_plus_mobilenet_v2_l3f_20260807_225848`
+ - delegate: CPU
+ - score treshold: 0.35
+ - goal of test: attempting to establish new baseline on t420 with dedicated camera
+ - duration of test: ~1 min
+ - special notes on env: -
+
+##### Results  
+
+```{r}
+fpsdiagram("fps_t420_logitech_sr9.csv")
+```
+
+Nothing noteworthy in browser commandline. Only `[Webcam inference]` and `[Webcam measurements]` prints.  
+
+Notes: `Camera_FPS` does weird fluctuation, occasionally going below `Sampling_FPS`. Thus sr9 is unacceptable. One more measurement on t420+logitech ought to be done with sr8.
