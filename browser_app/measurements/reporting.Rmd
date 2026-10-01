@@ -375,3 +375,29 @@ fpsdiagram("fps_t420_logitech_sr9.csv")
 Nothing noteworthy in browser commandline. Only `[Webcam inference]` and `[Webcam measurements]` prints.  
 
 Notes: `Camera_FPS` does weird fluctuation, occasionally going below `Sampling_FPS`. Thus sr9 is unacceptable. One more measurement on t420+logitech ought to be done with sr8.
+
+#### Test 2.7 T420, attempting to establish sr8 baseline
+
+##### Environment
+
+ - device: Thinkpad T420 (Intel Core i5-2520M, 12GB RAM, no dedicated GPU)
+ - OS: Lubuntu 25.04
+ - browser + version: Mozilla/5.0 (X11; Linux x86_64; rv:150.0) Gecko/20100101 Firefox/150.0
+ - camera: Logitech, Inc. C920 HD Pro Webcam
+ - target sampling rate: 8
+ - model: `ssd_plus_mobilenet_v2_l3f_20260807_225848`
+ - delegate: CPU
+ - score treshold: 0.35
+ - goal of test: attempting to establish new baseline on t420 with dedicated camera
+ - duration of test: ~1 min
+ - special notes on env: -
+
+##### Results  
+
+```{r}
+fpsdiagram("fps_t420_logitech_sr8.csv")
+```
+
+Nothing noteworthy in browser commandline. Only `[Webcam inference]` and `[Webcam measurements]` prints.  
+
+Notes: `Camera_FPS` continues to act weird, with a huge 50+ fps peak lasting a few seconds. Baselinewise: a sr8 keeps `Inference_FPS` and `Sampling_fps` at a constant 8, always below the camera curve. We now consider sr8 an acceptable baseline for t420 + logitech. Next up: measurements on a mobile device.
