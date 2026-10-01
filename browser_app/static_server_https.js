@@ -1,4 +1,4 @@
-import http from 'node:http';
+import http from 'node:https';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -6,8 +6,13 @@ import { fileURLToPath } from 'node:url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// Certificate stuff
+const certificateDirectory = path.resolve(__dirname, '..', '..', 'certs');
+const certificate = fs.readFileSync(path.join(certificateDirectory, 'server-cert.pem'));
+const privateKey = fs.readFileSync(path.join(certificateDirectory, 'server-key.pem'));
+
 const publicDirectory = path.join(__dirname, 'dist');
-const port = 821;
+const port = 822;
 
 const mimeTypes = {
     '.html': 'text/html; charset=utf-8',
@@ -22,7 +27,7 @@ const mimeTypes = {
     '.svg': 'image/svg+xml',
 };
 
-const server = http.createServer((request, response) => {
+const server = http.createServer({ key: privateKey, cert: certificate }, (request, response) => {
     let requestPath;
 
     try {
@@ -63,5 +68,5 @@ const server = http.createServer((request, response) => {
 });
 
 server.listen(port, '0.0.0.0', () => {
-    console.log(`Static server running on http://localhost:${port}`);
+    console.log(`Static HTTPS server running on http://localhost:${port}`);
 });
