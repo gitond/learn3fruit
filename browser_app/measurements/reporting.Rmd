@@ -401,3 +401,81 @@ fpsdiagram("fps_t420_logitech_sr8.csv")
 Nothing noteworthy in browser commandline. Only `[Webcam inference]` and `[Webcam measurements]` prints.  
 
 Notes: `Camera_FPS` continues to act weird, with a huge 50+ fps peak lasting a few seconds. Baselinewise: a sr8 keeps `Inference_FPS` and `Sampling_fps` at a constant 8, always below the camera curve. We now consider sr8 an acceptable baseline for t420 + logitech. Next up: measurements on a mobile device.
+
+#### Test 2.8 Running on mobile
+
+##### Environment
+
+ - device: Motorola moto g06 (MediaTek Heli G81 Extreme, 4GB+2GB(RAM boost), no dedicated GPU)
+ - OS: Android 15
+ - browser + version: Mozilla/5.0 (Android 15; Mobile; rv:157.0) Gecko/157.0 Firefox/157.0
+ - camera: Front 8M
+ - target sampling rate: 14
+ - model: `ssd_plus_mobilenet_v2_l3f_20260807_225848`
+ - delegate: CPU
+ - score treshold: 0.35
+ - goal of test: Attempting to run application on mobile
+ - duration of test: ~1 min
+ - special notes on env: -
+
+##### Results  
+
+```{r}
+fpsdiagram("fps_motorola_base.csv")
+```
+
+Can't access browser command line on mobile.
+
+Notes: On mobile we're shockingly far away from our targets. `Camera_FPS` is between 2 and 3, while inference and sampling are between 1 and 3. I will decrease the target to 2, and then try to find a better baseline.
+
+#### Test 2.9 Baseline on mobile
+
+##### Environment
+
+ - device: Motorola moto g06 (MediaTek Heli G81 Extreme, 4GB+2GB(RAM boost), no dedicated GPU)
+ - OS: Android 15
+ - browser + version: Mozilla/5.0 (Android 15; Mobile; rv:157.0) Gecko/157.0 Firefox/157.0
+ - camera: Front 8M
+ - target sampling rate: 2
+ - model: `ssd_plus_mobilenet_v2_l3f_20260807_225848`
+ - delegate: CPU
+ - score treshold: 0.35
+ - goal of test: Attempting to find a baseline on mobile
+ - duration of test: ~1 min
+ - special notes on env: -
+
+##### Results  
+
+```{r}
+fpsdiagram("fps_motorola_sr2.csv")
+```
+
+Can't access browser command line on mobile.
+
+Notes: Changing the SR target to 2 freed up the camera FPS. Now camera FPS moves between 5 and 20. Sampling & inference can't reach 2 in a stable fashion (multiple dips below). Nevertheless I think that it is still worth it to attempt SR3, possibly even higher if SR3 goes well.
+
+#### Test 2.10 Baseline on mobile: SR3
+
+##### Environment
+
+ - device: Motorola moto g06 (MediaTek Heli G81 Extreme, 4GB+2GB(RAM boost), no dedicated GPU)
+ - OS: Android 15
+ - browser + version: Mozilla/5.0 (Android 15; Mobile; rv:157.0) Gecko/157.0 Firefox/157.0
+ - camera: Front 8M
+ - target sampling rate: 3
+ - model: `ssd_plus_mobilenet_v2_l3f_20260807_225848`
+ - delegate: CPU
+ - score treshold: 0.35
+ - goal of test: Attempting to find a baseline on mobile
+ - duration of test: ~1 min
+ - special notes on env: -
+
+##### Results  
+
+```{r}
+fpsdiagram("fps_motorola_sr3.csv")
+```
+
+Can't access browser command line on mobile.
+
+Notes: We already hit the expected problems (trying to sample at a higher rate then what our latency allows for thus limiting the `Camera_FPS` and seldom reaching our sampling rate + causing wild fluctuations. Therefore we establish 2 as a mobile sample rate baseline.
