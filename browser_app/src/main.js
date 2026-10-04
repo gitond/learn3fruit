@@ -4,11 +4,18 @@ import { ObjectDetector, FilesetResolver } from '@mediapipe/tasks-vision';
 import { startCamera, stopCamera, getCameraState, getCameraFps } from './camera.js';
 
 /// DOM STUFF ///
-// environment related
+// environment & debug related
 const statusElement = document.querySelector('#status');
 const browserStatusElement = document.querySelector('#browser-status');
 const applicationStatusElement = document.querySelector('#application-status');
 const modelStatusElement = document.querySelector('#model-status');
+const protocolStatusElement = document.querySelector('#protocol-status');
+const secureContextStatusElement = document.querySelector('#secure-context-status');
+const mediaDevicesStatusElement = document.querySelector('#media-devices-status');
+const getUserMediaStatusElement = document.querySelector('#get-user-media-status');
+const hostnameStatusElement = document.querySelector('#hostname-status');
+const portStatusElement = document.querySelector('#port-status');
+const originStatusElement = document.querySelector('#origin-status');
 
 // inference test related
 const imageWrapperElement = document.querySelector('#image-wrapper');
@@ -312,7 +319,30 @@ function setStatus(message) {
 }
 
 function checkBrowser() {
-  browserStatusElement.textContent = `${navigator.userAgent}`;
+  browserStatusElement.textContent = navigator.userAgent;
+
+  protocolStatusElement.textContent = window.location.protocol;
+
+  secureContextStatusElement.textContent =
+    window.isSecureContext ? 'Yes' : 'No';
+
+  mediaDevicesStatusElement.textContent =
+    navigator.mediaDevices ? 'Available' : 'Unavailable';
+
+  getUserMediaStatusElement.textContent =
+    navigator.mediaDevices?.getUserMedia
+      ? 'Available'
+      : 'Unavailable';
+
+  hostnameStatusElement.textContent =
+    window.location.hostname;
+
+  portStatusElement.textContent =
+    window.location.port || '(default)';
+
+  originStatusElement.textContent =
+    window.location.origin;
+
   return true;
 }
 

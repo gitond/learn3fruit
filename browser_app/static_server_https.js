@@ -12,7 +12,7 @@ const certificate = fs.readFileSync(path.join(certificateDirectory, 'server-cert
 const privateKey = fs.readFileSync(path.join(certificateDirectory, 'server-key.pem'));
 
 const publicDirectory = path.join(__dirname, 'dist');
-const port = 822;
+const port = 8822;
 
 const mimeTypes = {
     '.html': 'text/html; charset=utf-8',
@@ -68,5 +68,5 @@ const server = http.createServer({ key: privateKey, cert: certificate }, (reques
 });
 
 server.listen(port, '0.0.0.0', () => {
-    console.log(`Static HTTPS server running on http://localhost:${port}`);
+    console.log(`Static HTTPS server running on https://localhost:${port}`);
 });
