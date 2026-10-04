@@ -5,6 +5,7 @@ browser_app/dist/
 browser_app/minimal_host_and_deploy/
 browser_app/minimal_host_and_deploy.zip
 browser_app/public/test_image.jpg
+certs/
 data_and_training/*/dl*.txt
 !data_and_training/data/l3fds/*/dl*.txt
 data_and_training/data/l3fds/ds
