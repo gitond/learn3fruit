@@ -94,6 +94,7 @@ async function startApplication() {
     // - camera
     cameraStartBtn.addEventListener('click', handleStartCamera);
     cameraStopBtn.addEventListener('click', handleStopCamera);
+    cameraStartBtn.disabled = false;
 
     console.log('ObjectDetector ready:', objectDetector);
     return objectDetector;
@@ -101,6 +102,8 @@ async function startApplication() {
     console.error('Failed to initialize MediaPipe ObjectDetector:', error);
     setStatus(`Error: ${error.message}`);
     modelStatusElement.textContent = 'Failed to load/compile.';
+    cameraStartBtn.disabled = true;
+    runButton.disabled = true;
   }
 }
 
@@ -137,14 +140,6 @@ function startInferenceMeasurements() {
         recordStatusElement.textContent = `Recording... (${recordedData.length} samples)`;
       }
     }
-
-    console.log(
-      `[Webcam measurements] ` +
-      `Camera: ${getCameraFps().toFixed(2)} FPS | ` +
-      `Sampling: ${samplingFps.toFixed(2)} FPS | ` +
-      `Inference: ${inferenceFps.toFixed(2)} FPS | ` +
-      `Latency: ${inferenceLatencyMs.toFixed(2)} ms`
-    );
 
     updateMeasurementRendering();
 
@@ -245,12 +240,18 @@ async function handleStartCamera() {
     cameraStartBtn.disabled = false;
     cameraStopBtn.disabled = true;
 
-    if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
-      cameraStatusElement.textContent = 'Error: Camera access denied by user or browser.';
-    } else if (error.name === 'NotFoundError' || error.name === 'DevicesNotFoundError') {
+
+    // Camera related error-classification
+    const cameraState = getCameraState();
+
+    if (cameraState === 'denied') {
+      cameraStatusElement.textContent =
+        'Error: Camera access denied by user or browser.';
+    } else if (cameraState === 'no-camera') {
       cameraStatusElement.textContent = 'Error: No camera device found.';
     } else {
-      cameraStatusElement.textContent = `Error: ${error.message || 'Unable to access camera.'}`;
+      cameraStatusElement.textContent =
+        `Error: ${error.message || 'Unable to access camera.'}`;
     }
   }
 }
@@ -465,15 +466,20 @@ function prepareImageUIForInference(width, height) {
 }
 
 function prepareWebcamCanvas() {
-  if (
-    cameraVideoElement.videoWidth === 0 ||
-    cameraVideoElement.videoHeight === 0
-  ) {
+  const width = cameraVideoElement.videoWidth;
+  const height = cameraVideoElement.videoHeight;
+
+  if (width === 0 || height === 0) {
     return;
   }
 
-  webcamCanvasElement.width = cameraVideoElement.videoWidth;
-  webcamCanvasElement.height = cameraVideoElement.videoHeight;
+  if (
+    webcamCanvasElement.width !== width ||
+    webcamCanvasElement.height !== height
+  ) {
+    webcamCanvasElement.width = width;
+    webcamCanvasElement.height = height;
+  }
 }
 
 function updateMeasurementRendering() {
@@ -611,8 +617,6 @@ function runUploadedImageInference(detector) {
     testImageElement
   );
 
-  console.log('Detection Output:', detectionResult);
-
   // Bbox rendering
   renderDetectionResult(
     detectionResult,
@@ -633,8 +637,10 @@ function runUploadedImageInference(detector) {
 function runWebcamFrameInference() {
   if (getCameraState() !== 'running') {
     webcamOutputBoxElement.textContent = 'Camera is not active.';
-    return;
+    return false;
   }
+
+  prepareWebcamCanvas();
 
   webcamOutputBoxElement.textContent = 'Running inference on camera frame...';
 
@@ -648,8 +654,6 @@ function runWebcamFrameInference() {
 
   inferenceCount++;
 
-  console.log(`[Webcam inference] ${inferenceLatencyMs.toFixed(2)} ms`, detectionResult);
-
   // Visual output
   renderDetectionResult(
     detectionResult,
@@ -658,6 +662,7 @@ function runWebcamFrameInference() {
 
   const summaryText = `[Camera Snapshot] Detected ${detectionResult.detections.length} object(s).\n\n`;
   webcamOutputBoxElement.textContent = summaryText + renderDetectionResultText(detectionResult);
+  return true;
 }
 
 /**
@@ -670,8 +675,11 @@ function startCameraInferenceLoop(fps = 5) {
   const intervalMs = 1000 / fps; // 5 FPS = 200ms per frame
   inferenceInterval = setInterval(() => {
     if (getCameraState() === 'running' && objectDetector) {
-      samplingCount++;
-      runWebcamFrameInference();
+      const sampled = runWebcamFrameInference();
+
+      if (sampled) {
+        samplingCount++;
+      }
     }
   }, intervalMs);
 }

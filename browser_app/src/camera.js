@@ -44,8 +44,16 @@ export async function startCamera(video) {
         stream = null;
         videoElement.srcObject = null;
 
-        if (error.name === 'NotAllowedError') {
+        if (
+            error.name === 'NotAllowedError' ||
+            error.name === 'PermissionDeniedError'
+        ) {
             state = 'denied';
+        } else if (
+            error.name === 'NotFoundError' ||
+            error.name === 'DevicesNotFoundError'
+        ) {
+            state = 'no-camera';
         } else {
             state = 'error';
         }
@@ -88,6 +96,7 @@ export function stopCamera() {
  * - requesting
  * - running
  * - denied
+ * - no-camera
  * - error
  */
 export function getCameraState() {
