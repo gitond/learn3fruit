@@ -479,3 +479,86 @@ fpsdiagram("fps_motorola_sr3.csv")
 Can't access browser command line on mobile.
 
 Notes: We already hit the expected problems (trying to sample at a higher rate then what our latency allows for thus limiting the `Camera_FPS` and seldom reaching our sampling rate + causing wild fluctuations. Therefore we establish 2 as a mobile sample rate baseline.
+
+### Test series 3: Endurance
+
+#### Test 3.1 stability over a long time
+
+##### Environment
+
+ - device: Self built PC (AMD Ryzen 7 3700X, 16GB RAM, Nvidia Geforce GTX 1660 Super)
+ - OS: Fedora Linux 42 (Workstation Edition)
+ - browser + version: Mozilla/5.0 (X11; Linux x86_64; rv:143.0) Gecko/20100101 Firefox/143.0
+ - camera: Logitech, Inc. C920 HD Pro Webcam
+ - target sampling rate: 14
+ - model: `ssd_plus_mobilenet_v2_l3f_20260807_225848`
+ - delegate: CPU
+ - score treshold: 0.35
+ - goal of test: see & record any ram usage & misbehaviors over a long time
+ - duration of test: ~15 min
+ - special notes on env: -
+
+##### Results  
+
+I measured RAM usage of our app given around 15 minutes of webcam usage. `Camera_FPS`, Real sampling rate (vs target) etc. wasn't measured. Below are the results:
+
+```{r}
+d <- data.frame(time=c(-1,1,5,10,15), value=c(124,151,176,193,207))
+print(d)
+
+ggplot(d, aes(time, value)) +
+   geom_line() + geom_point() +
+   labs(x="Minutes after starting webcam", y="RAM usage (MB)",
+        title="RAM Usage Over Time")
+```
+
+Nothing noteworthy was observed in browser commandline. Only `[Webcam inference]` and `[Webcam measurements]` prints.  
+Browser responsiveness was also observed during this testing run with the browser remaining responsive. The only thing noteworthy is that keeping the tab open (Incl browser command line open + live camera feed etc) drastically raises cpu usage  
+All in all even though we have constantly increasing memory usage & high CPU usage this around 200MB over 15min ram usage is acceptable for our use case even on less powerful devices.
+
+#### Test 3.2 Reacting to camera disruptions
+
+##### Environment
+
+ - device: Self built PC (AMD Ryzen 7 3700X, 16GB RAM, Nvidia Geforce GTX 1660 Super)
+ - OS: Fedora Linux 42 (Workstation Edition)
+ - browser + version: Mozilla/5.0 (X11; Linux x86_64; rv:143.0) Gecko/20100101 Firefox/143.0
+ - camera: Logitech, Inc. C920 HD Pro Webcam
+ - target sampling rate: 14
+ - model: `ssd_plus_mobilenet_v2_l3f_20260807_225848`
+ - delegate: CPU
+ - score treshold: 0.35
+ - goal of test: see how the app reacts to the loss of the camera signal (achieved by physically unplugging the camera during a test)
+ - duration of test: ~1 min
+ - special notes on env: -
+
+##### Results  
+
+```{r}
+fpsdiagram("fps_camera_disrupt.csv")
+```
+
+No new frames incoming: last known camera frame frozen on `<video id="camera-video">`.  
+NOTABLY: nothing on interface (like generic status print, camera status print, webcam feed) OR the browser command line indicates camera disruption. Underlying systems continue with no more frames coming in from sampling.  
+Moment of camera disruption clearly visible on graph: `Camera_FPS` reporting doesn't update the number after no new frames available. It permanently stays $16.46 FPS$.  
+Plugging the camera back in while the test is still ongoing doesn't autoresume frame sampling etc. Possible weakness in app found.
+
+#### Test 3.3 Reacting to start-stop-loops
+
+##### Environment
+
+ - device: Self built PC (AMD Ryzen 7 3700X, 16GB RAM, Nvidia Geforce GTX 1660 Super)
+ - OS: Fedora Linux 42 (Workstation Edition)
+ - browser + version: Mozilla/5.0 (X11; Linux x86_64; rv:143.0) Gecko/20100101 Firefox/143.0
+ - camera: Logitech, Inc. C920 HD Pro Webcam
+ - target sampling rate: 14
+ - model: `ssd_plus_mobilenet_v2_l3f_20260807_225848`
+ - delegate: CPU
+ - score treshold: 0.35
+ - goal of test: see how the app reacts to repeatedly turning the camera on and off
+ - duration of test: ~1 min
+ - special notes on env: -
+
+##### Results  
+
+No notable efect on infrernce rates, sampling rates, `Camera_FPS`. No unusual prints on browser command line or status renderings. Measurement recording malfunctions due to camera stop also stopping it. This is intended behavior. No new weaknesses to report here.
