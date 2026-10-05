@@ -23,7 +23,7 @@ const imageInputElement = document.querySelector('#image-input');
 const testImageElement = document.querySelector('#test-image');
 const canvasElement = document.querySelector('#output-canvas');
 const runButton = document.querySelector('#run-btn');
-const outputBoxElement = document.querySelector('#output-box');
+const imageOutputBoxElement = document.querySelector('#image-output-box');
 
 // camera related
 const cameraVideoElement = document.querySelector('#camera-video');
@@ -453,7 +453,7 @@ function resetImageUI() {
   const ctx = canvasElement.getContext('2d');
   ctx.clearRect(0, 0, canvasElement.width, canvasElement.height);
 
-  outputBoxElement.textContent = 'Awaiting inference execution...';
+  imageOutputBoxElement.textContent = 'Awaiting inference execution...';
   updateRunButtonState();
 }
 
@@ -570,7 +570,7 @@ async function loadSelectedImage(file) {
     prepareImageUIForInference(naturalWidth, naturalHeight);
   } catch (error) {
     resetImageSelection();
-    outputBoxElement.textContent = 'Failed to load selected image.';
+    imageOutputBoxElement.textContent = 'Failed to load selected image.';
   }
 }
 
@@ -599,12 +599,12 @@ function runInference(detector, imageElement) {
  */
 function runUploadedImageInference(detector) {
   if (!imageReady) {
-    outputBoxElement.textContent =
+    imageOutputBoxElement.textContent =
       'No valid image loaded, please select an image...';
     return;
   }
 
-  outputBoxElement.textContent = 'Running inference...';
+  imageOutputBoxElement.textContent = 'Running inference...';
 
   const detectionResult = runInference(
     detector,
@@ -621,7 +621,7 @@ function runUploadedImageInference(detector) {
 
   // Textual output
   const summaryText = `Inference complete. Detected ${detectionResult.detections.length} object(s).\n\n`;
-  outputBoxElement.textContent = summaryText + renderDetectionResultText(detectionResult);
+  imageOutputBoxElement.textContent = summaryText + renderDetectionResultText(detectionResult);
 
 }
 
