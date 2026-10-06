@@ -59,6 +59,183 @@ function updateRunButtonState() { runButton.disabled = !(objectDetector && image
 
 /// TRACKER DATA STRUCTURES & ADAPTERS ///
 
+/**
+ * Constants governing tracking configuration and confidence thresholds.
+ */
+const TRACKER_CONFIG = {
+  // Window parameters for temporal reasoning
+  BUFFER_WINDOW_MS: 500, // Minimal time window (y_ms)
+  MIN_BUFFER_FRAMES: 10, // Minimal frame count window (x_frames)
+
+  // Confidence thresholds
+  MIN_TRACK_CONFIDENCE: 0.50, // Minimum track confidence to consider an instance CONFIRMED
+
+  // Lifecycle thresholds
+  CONFIRMATION_FRAMES: 3,     // Required consecutive detections before promotion from TENTATIVE
+  MISSING_FRAMES_LIMIT: 5,    // Consecutive missed frames before marking DELETED
+
+  // Matching thresholds (in pixel space)
+  MAX_MATCH_DISTANCE_PX: 100
+};
+
+/**
+ * Enumeration of lifecycle states for an object track instance.
+ */
+const TrackStatus = {
+  TENTATIVE: 'TENTATIVE',
+  CONFIRMED: 'CONFIRMED',
+  TEMPORARILY_MISSING: 'TEMPORARILY_MISSING',
+  DELETED: 'DELETED'
+};
+
+/**
+ * Represents a single normalized observation extracted from a detector output frame.
+ */
+class Observation {
+  /**
+   * @param {Object} params
+   * @param {number} params.timestamp - Capture timestamp (e.g., performance.now())
+   * @param {string} params.category - Primary category label
+   * @param {number} params.detectionConfidence - Raw score from the detector (0.0 - 1.0)
+   * @param {Object} params.boundingBox - Original bounding box { originX, originY, width, height, angle }
+   * @param {Object} params.center - Calculated pixel coordinates { centerX, centerY }
+   */
+  constructor({ timestamp, category, detectionConfidence, boundingBox, center }) {
+    this.timestamp = timestamp;
+    this.category = category;
+    this.detectionConfidence = detectionConfidence;
+    this.boundingBox = boundingBox;
+    this.center = center;
+  }
+}
+
+/**
+ * Data structure representing a list of observations for one inference frame.
+ */
+class TrackerInput {
+  /**
+   * @param {number} timestamp
+   * @param {Observation[]} observations
+   */
+  constructor(timestamp, observations = []) {
+    this.timestamp = timestamp;
+    this.observations = observations;
+  }
+}
+
+/**
+ * Represents a persistent hypothesis that multiple observations belong to the same physical object.
+ */
+class Track {
+  /**
+   * @param {string} instanceId - Unique identifier (e.g. "inst_1")
+   * @param {Observation} initialObservation - First observation that spawned this track
+   */
+  constructor(instanceId, initialObservation) {
+    this.instanceId = instanceId;
+    this.status = TrackStatus.TENTATIVE;
+
+    // Core spatial state (in pixel coordinates)
+    this.center = { ...initialObservation.center };
+    this.boundingBox = { ...initialObservation.boundingBox };
+    this.velocity = { x: 0, y: 0 }; // Velocity vector in pixels/ms
+
+    // Temporal evidence & history
+    this.history = [initialObservation];
+    this.categoryHistory = [{ category: initialObservation.category, timestamp: initialObservation.timestamp }];
+    this.currentCategory = initialObservation.category;
+
+    // Separate confidence metrics
+    this.lastDetectionConfidence = initialObservation.detectionConfidence;
+    this.trackConfidence = 0.30; // Initial tentative track confidence score
+
+    // Counters and timestamps
+    this.createdAt = initialObservation.timestamp;
+    this.updatedAt = initialObservation.timestamp;
+    this.consecutiveHits = 1;
+    this.consecutiveMisses = 0;
+  }
+}
+
+/**
+ * Data structure exposing current state to downstream consumers (AR Renderer, Trajectory, etc.).
+ */
+class TrackerOutput {
+  /**
+   * @param {number} timestamp
+   * @param {Track[]} tracks
+   */
+  constructor(timestamp, tracks = []) {
+    this.timestamp = timestamp;
+    this.tracks = tracks;
+  }
+}
+
+/**
+ * Calculates the center point of a bounding box in pixel coordinates.
+ *
+ * @param {Object} boundingBox - { originX, originY, width, height }
+ * @returns {{ centerX: number, centerY: number }}
+ */
+function calculateCenter(boundingBox) {
+  return {
+    centerX: boundingBox.originX + boundingBox.width / 2,
+    centerY: boundingBox.originY + boundingBox.height / 2
+  };
+}
+
+/**
+ * Adapts a MediaPipe detection item into an internal Observation data structure.
+ *
+ * @param {Object} detection - Single item from MediaPipe detectionResult.detections
+ * @param {number} timestamp - High-resolution timestamp (e.g. performance.now())
+ * @returns {Observation}
+ */
+function toObservation(detection, timestamp = performance.now()) {
+  const primaryCategory = detection.categories?.[0];
+  const categoryName = primaryCategory?.categoryName || 'unknown';
+  const detectionConfidence = primaryCategory?.score || 0;
+
+  const boundingBox = {
+    originX: detection.boundingBox.originX,
+    originY: detection.boundingBox.originY,
+    width: detection.boundingBox.width,
+    height: detection.boundingBox.height,
+    angle: detection.boundingBox.angle || 0
+  };
+
+  const center = calculateCenter(boundingBox);
+
+  return new Observation({
+    timestamp,
+    category: categoryName,
+    detectionConfidence,
+    boundingBox,
+    center
+  });
+}
+
+/**
+ * Converts a raw MediaPipe DetectionResult payload into a normalized TrackerInput object.
+ *
+ * @param {Object} detectionResult - Raw output from objectDetector.detect()
+ * @param {number} timestamp - High-resolution timestamp
+ * @returns {TrackerInput}
+ */
+function toTrackerInput(detectionResult, timestamp = performance.now()) {
+  if (!detectionResult || !Array.isArray(detectionResult.detections)) {
+    return new TrackerInput(timestamp, []);
+  }
+
+  const observations = detectionResult.detections.map(detection =>
+    toObservation(detection, timestamp)
+  );
+
+  return new TrackerInput(timestamp, observations);
+}
+
+
+
 /// LOADING & SETUP ///
 async function startApplication() {
   applicationStatusElement.textContent = 'Initializing MediaPipe Vision WASM...';
