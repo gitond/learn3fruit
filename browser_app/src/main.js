@@ -666,6 +666,102 @@ function stopCameraInferenceLoop() {
 
 
 /// TRACKER BUFFER ENGINE ///
+
+/**
+ * Temporal history queue for tracking observations.
+ *
+ * Implements dual temporal/frame-count eviction logic:
+ *   should_dequeue = enough_frames && enough_time
+ *
+ * Where:
+ *   enough_frames : buffer.length > TRACKER_CONFIG.MIN_BUFFER_FRAMES
+ *   enough_time   : current_timestamp - oldest_entry.timestamp > TRACKER_CONFIG.BUFFER_WINDOW_MS
+ */
+class TemporalBuffer {
+  /**
+   * @param {Object} [config=TRACKER_CONFIG]
+   */
+  constructor(config = TRACKER_CONFIG) {
+    this.buffer = [];
+    this.minBufferFrames = config.MIN_BUFFER_FRAMES;
+    this.bufferWindowMs = config.BUFFER_WINDOW_MS;
+  }
+
+  /**
+   * Enqueues a new TrackerInput frame observation and triggers the dequeue check.
+   *
+   * @param {TrackerInput} trackerInput - Normalized frame observations with timestamp
+   */
+  enqueue(trackerInput) {
+    if (!trackerInput || typeof trackerInput.timestamp !== 'number') {
+      return;
+    }
+
+    this.buffer.push(trackerInput);
+    this._evictStaleEntries(trackerInput.timestamp);
+  }
+
+  /**
+   * Internal dequeue check that purges stale entries from the front of the queue.
+   *
+   * @param {number} currentTimestamp - Timestamp of the most recently enqueued frame
+   * @private
+   */
+  _evictStaleEntries(currentTimestamp) {
+    while (this.buffer.length > 0) {
+      const oldestEntry = this.buffer[0];
+      const timeElapsed = currentTimestamp - oldestEntry.timestamp;
+
+      const enoughFrames = this.buffer.length > this.minBufferFrames;
+      const enoughTime = timeElapsed > this.bufferWindowMs;
+
+      // Dequeue if and only if both conditions are met
+      if (enoughFrames && enoughTime) {
+        this.buffer.shift();
+      } else {
+        break; // Stop checking once the oldest remaining entry should not be dequeued
+      }
+    }
+  }
+
+  /**
+   * Returns a copy of all current TrackerInput entries stored in the buffer.
+   *
+   * @returns {TrackerInput[]}
+   */
+  getEntries() {
+    return [...this.buffer];
+  }
+
+  /**
+   * Flattens and returns all observations stored across all frames in the buffer.
+   *
+   * @returns {Observation[]}
+   */
+  getAllObservations() {
+    return this.buffer.flatMap(entry => entry.observations);
+  }
+
+  /**
+   * Returns the current number of frames in the buffer.
+   *
+   * @returns {number}
+   */
+  getFrameCount() {
+    return this.buffer.length;
+  }
+
+  /**
+   * Clears all entries from the buffer.
+   */
+  clear() {
+    this.buffer = [];
+  }
+}
+
+
+
+
 /// TRACKER: PREDICTIONS & MATCHING ///
 /// TRACKER LIFECYCLE & STATE MANAGEMENT ///
 
