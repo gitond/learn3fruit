@@ -57,6 +57,7 @@ let sessionStartTime = null;
 
 function updateRunButtonState() { runButton.disabled = !(objectDetector && imageReady); }
 
+/// TRACKER DATA STRUCTURES & ADAPTERS ///
 
 /// LOADING & SETUP ///
 async function startApplication() {
@@ -108,8 +109,168 @@ async function startApplication() {
 }
 
 
-/// WEBCAM INFERENCE MEASUREMENTS ///
+/// IMAGE HANDLING FUNCTIONS ///
+function resetImageSelection() {
+  if (currentObjectUrl) {
+    URL.revokeObjectURL(currentObjectUrl);
+    currentObjectUrl = null;
+  }
+  imageReady = false;
 
+  resetImageUI();
+}
+
+function handleImageSelection(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+
+  // Enforce JPG/JPEG validation in JS
+  const validTypes = ['image/jpeg', 'image/jpg'];
+  const hasJpgExtension = /\.(jpe?g)$/i.test(file.name);
+
+  if (!validTypes.includes(file.type) && !hasJpgExtension) {
+    alert('Please select a valid .jpg or .jpeg image.');
+    event.target.value = '';
+    resetImageSelection();
+    return;
+  }
+
+  loadSelectedImage(file);
+}
+
+/**
+ * Loads a File object into an HTMLImageElement and returns a Object URL reference.
+ * Pure data/DOM-node setup without UI status updates.
+ */
+function loadImageElement(file, imageElement) {
+  return new Promise((resolve, reject) => {
+    const objectUrl = URL.createObjectURL(file);
+
+    imageElement.onload = () => {
+      resolve({ objectUrl, naturalWidth: imageElement.naturalWidth, naturalHeight: imageElement.naturalHeight });
+    };
+
+    imageElement.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error('Failed to load image into element.'));
+    };
+
+    imageElement.src = objectUrl;
+  });
+}
+
+async function loadSelectedImage(file) {
+  resetImageSelection();
+
+  try {
+    const { objectUrl, naturalWidth, naturalHeight } = await loadImageElement(file, testImageElement);
+
+    // Store URL reference for cleanup later
+    currentObjectUrl = objectUrl;
+    imageReady = true;
+
+    // Update UI state with loaded image properties
+    prepareImageUIForInference(naturalWidth, naturalHeight);
+  } catch (error) {
+    resetImageSelection();
+    imageOutputBoxElement.textContent = 'Failed to load selected image.';
+  }
+}
+
+
+/// WEBCAM HANDLING ///
+async function handleStartCamera() {
+  // Update button states & status text during request
+  cameraStartBtn.disabled = true;
+  cameraStatusElement.textContent = 'Requesting camera access...';
+
+  try {
+    await startCamera(cameraVideoElement);
+
+    // Successfully started
+    cameraStopBtn.disabled = false;
+    cameraStatusElement.textContent = 'Camera active (running)';
+
+    // Mapping camera canvas coordinate system to actual webcam frames
+    prepareWebcamCanvas();
+
+    // Start UI update timer for rendering current FPS
+    startFpsUiLoop();
+
+    // Start running inference at specified FPS
+    startInferenceMeasurements();
+    startCameraInferenceLoop(14);
+  } catch (error) {
+    cameraStartBtn.disabled = false;
+    cameraStopBtn.disabled = true;
+
+
+    // Camera related error-classification
+    const cameraState = getCameraState();
+
+    if (cameraState === 'denied') {
+      cameraStatusElement.textContent =
+        'Error: Camera access denied by user or browser.';
+    } else if (cameraState === 'no-camera') {
+      cameraStatusElement.textContent = 'Error: No camera device found.';
+    } else {
+      cameraStatusElement.textContent =
+        `Error: ${error.message || 'Unable to access camera.'}`;
+    }
+  }
+}
+
+function handleStopCamera() {
+  stopCamera();
+  stopFpsUiLoop();
+  stopCameraInferenceLoop();
+  stopInferenceMeasurements();
+
+  // Reset UI
+  cameraStartBtn.disabled = false;
+  cameraStopBtn.disabled = true;
+
+  cameraStatusElement.textContent = 'Camera stopped';
+  webcamOutputBoxElement.textContent = 'Camera stopped';
+
+  measurementRenderingsElement.textContent = 'Awaiting measurements...';
+
+  webcamCanvasElement
+    .getContext('2d')
+    .clearRect(
+      0,
+      0,
+      webcamCanvasElement.width,
+      webcamCanvasElement.height
+    );
+
+  // Reset recording
+  if (isRecording) {
+    recordCsvToggle.checked = false;
+    handleToggleRecording({ target: { checked: false } });
+  }
+}
+
+function startFpsUiLoop() {
+  stopFpsUiLoop();
+
+  fpsAnimationInterval = setInterval(() => {
+    if (getCameraState() === 'running') {
+      updateMeasurementRendering();
+    }
+  }, 250);
+}
+
+function stopFpsUiLoop() {
+  if (fpsAnimationInterval) {
+    clearInterval(fpsAnimationInterval);
+    fpsAnimationInterval = null;
+  }
+}
+
+
+
+/// WEBCAM INFERENCE MEASUREMENTS ///
 function startInferenceMeasurements() {
   stopInferenceMeasurements();
 
@@ -214,95 +375,123 @@ function downloadCsvFile() {
 }
 
 
-/// WEBCAM HANDLING ///
-async function handleStartCamera() {
-  // Update button states & status text during request
-  cameraStartBtn.disabled = true;
-  cameraStatusElement.textContent = 'Requesting camera access...';
+/// INFERENCE STUFF ///
+/**
+ * Runs object detection on an image element.
+ *
+ * This is the core inference operation. It deliberately has
+ * no knowledge of UI rendering or where the image came from.
+ *
+ * @param {ObjectDetector} detector
+ * @param {HTMLImageElement, HTMLVideoElement} imageElement
+ * @returns {DetectionResult}
+ */
+function runInference(detector, imageElement) {
+  return detector.detect(imageElement);
+}
 
-  try {
-    await startCamera(cameraVideoElement);
+/**
+ * Runs inference using the currently loaded uploaded image
+ * and performs the existing uploaded-image UI/rendering.
+ *
+ * @param {ObjectDetector} detector
+ */
+function runUploadedImageInference(detector) {
+  if (!imageReady) {
+    imageOutputBoxElement.textContent =
+      'No valid image loaded, please select an image...';
+    return;
+  }
 
-    // Successfully started
-    cameraStopBtn.disabled = false;
-    cameraStatusElement.textContent = 'Camera active (running)';
+  imageOutputBoxElement.textContent = 'Running inference...';
 
-    // Mapping camera canvas coordinate system to actual webcam frames
-    prepareWebcamCanvas();
+  const detectionResult = runInference(
+    detector,
+    testImageElement
+  );
 
-    // Start UI update timer for rendering current FPS
-    startFpsUiLoop();
+  // Bbox rendering
+  renderDetectionResult(
+    detectionResult,
+    canvasElement
+  );
 
-    // Start running inference at specified FPS
-    startInferenceMeasurements();
-    startCameraInferenceLoop(14);
-  } catch (error) {
-    cameraStartBtn.disabled = false;
-    cameraStopBtn.disabled = true;
+  // Textual output
+  const summaryText = `Inference complete. Detected ${detectionResult.detections.length} object(s).\n\n`;
+  imageOutputBoxElement.textContent = summaryText + renderDetectionResultText(detectionResult);
 
+}
 
-    // Camera related error-classification
-    const cameraState = getCameraState();
+/**
+ * Captures the current frame from the webcam video element,
+ * runs inference through the existing detector pipeline,
+ * and renders the detection result.
+ */
+function runWebcamFrameInference() {
+  if (getCameraState() !== 'running') {
+    webcamOutputBoxElement.textContent = 'Camera is not active.';
+    return false;
+  }
 
-    if (cameraState === 'denied') {
-      cameraStatusElement.textContent =
-        'Error: Camera access denied by user or browser.';
-    } else if (cameraState === 'no-camera') {
-      cameraStatusElement.textContent = 'Error: No camera device found.';
-    } else {
-      cameraStatusElement.textContent =
-        `Error: ${error.message || 'Unable to access camera.'}`;
+  prepareWebcamCanvas();
+
+  webcamOutputBoxElement.textContent = 'Running inference on camera frame...';
+
+  const inferenceStart = performance.now();
+
+  // detector.detect() accepts HTMLVideoElement directly and extracts the current frame
+  const detectionResult = runInference(objectDetector, cameraVideoElement);
+
+  const inferenceEnd = performance.now();
+  inferenceLatencyMs = inferenceEnd - inferenceStart;
+
+  inferenceCount++;
+
+  // Inference result output. Several times per s. Comment out when not using.
+  //console.log(`[Webcam inference] ${inferenceLatencyMs.toFixed(2)} ms`, detectionResult);
+
+  // Visual output
+  renderDetectionResult(
+    detectionResult,
+    webcamCanvasElement
+  );
+
+  const summaryText = `[Camera Snapshot] Detected ${detectionResult.detections.length} object(s).\n\n`;
+  webcamOutputBoxElement.textContent = summaryText + renderDetectionResultText(detectionResult);
+  return true;
+}
+
+/**
+ * Starts running frame inference periodically at a specified frame rate.
+ * @param {number} fps - Target detections per second (e.g., 5)
+ */
+function startCameraInferenceLoop(fps = 5) {
+  stopCameraInferenceLoop(); // Clear any existing loop
+
+  const intervalMs = 1000 / fps; // 5 FPS = 200ms per frame
+  inferenceInterval = setInterval(() => {
+    if (getCameraState() === 'running' && objectDetector) {
+      const sampled = runWebcamFrameInference();
+
+      if (sampled) {
+        samplingCount++;
+      }
     }
+  }, intervalMs);
+}
+
+function stopCameraInferenceLoop() {
+  if (inferenceInterval) {
+    clearInterval(inferenceInterval);
+    inferenceInterval = null;
   }
 }
 
-function handleStopCamera() {
-  stopCamera();
-  stopFpsUiLoop();
-  stopCameraInferenceLoop();
-  stopInferenceMeasurements();
 
-  // Reset UI
-  cameraStartBtn.disabled = false;
-  cameraStopBtn.disabled = true;
+/// TRACKER BUFFER ENGINE ///
+/// TRACKER: PREDICTIONS & MATCHING ///
+/// TRACKER LIFECYCLE & STATE MANAGEMENT ///
 
-  cameraStatusElement.textContent = 'Camera stopped';
-  webcamOutputBoxElement.textContent = 'Camera stopped';
-
-  measurementRenderingsElement.textContent = 'Awaiting measurements...';
-
-  webcamCanvasElement
-    .getContext('2d')
-    .clearRect(
-      0,
-      0,
-      webcamCanvasElement.width,
-      webcamCanvasElement.height
-    );
-
-  // Reset recording
-  if (isRecording) {
-    recordCsvToggle.checked = false;
-    handleToggleRecording({ target: { checked: false } });
-  }
-}
-
-function startFpsUiLoop() {
-  stopFpsUiLoop();
-
-  fpsAnimationInterval = setInterval(() => {
-    if (getCameraState() === 'running') {
-      updateMeasurementRendering();
-    }
-  }, 250);
-}
-
-function stopFpsUiLoop() {
-  if (fpsAnimationInterval) {
-    clearInterval(fpsAnimationInterval);
-    fpsAnimationInterval = null;
-  }
-}
 
 /// DISPLAYING & RENDERING FUNCTIONS ///
 // Helper to generate a consistent HSL color based on string hash
@@ -511,186 +700,6 @@ function updateMeasurementRendering() {
     `Inference: ${inferenceFps.toFixed(2)} FPS | ` +
     `Latency: ${inferenceLatencyMs.toFixed(2)} ms`;
 }
-
-/// IMAGE HANDLING FUNCTIONS ///
-function resetImageSelection() {
-  if (currentObjectUrl) {
-    URL.revokeObjectURL(currentObjectUrl);
-    currentObjectUrl = null;
-  }
-  imageReady = false;
-
-  resetImageUI();
-}
-
-function handleImageSelection(event) {
-  const file = event.target.files[0];
-  if (!file) return;
-
-  // Enforce JPG/JPEG validation in JS
-  const validTypes = ['image/jpeg', 'image/jpg'];
-  const hasJpgExtension = /\.(jpe?g)$/i.test(file.name);
-
-  if (!validTypes.includes(file.type) && !hasJpgExtension) {
-    alert('Please select a valid .jpg or .jpeg image.');
-    event.target.value = '';
-    resetImageSelection();
-    return;
-  }
-
-  loadSelectedImage(file);
-}
-
-/**
- * Loads a File object into an HTMLImageElement and returns a Object URL reference.
- * Pure data/DOM-node setup without UI status updates.
- */
-function loadImageElement(file, imageElement) {
-  return new Promise((resolve, reject) => {
-    const objectUrl = URL.createObjectURL(file);
-
-    imageElement.onload = () => {
-      resolve({ objectUrl, naturalWidth: imageElement.naturalWidth, naturalHeight: imageElement.naturalHeight });
-    };
-
-    imageElement.onerror = () => {
-      URL.revokeObjectURL(objectUrl);
-      reject(new Error('Failed to load image into element.'));
-    };
-
-    imageElement.src = objectUrl;
-  });
-}
-
-async function loadSelectedImage(file) {
-  resetImageSelection();
-
-  try {
-    const { objectUrl, naturalWidth, naturalHeight } = await loadImageElement(file, testImageElement);
-
-    // Store URL reference for cleanup later
-    currentObjectUrl = objectUrl;
-    imageReady = true;
-
-    // Update UI state with loaded image properties
-    prepareImageUIForInference(naturalWidth, naturalHeight);
-  } catch (error) {
-    resetImageSelection();
-    imageOutputBoxElement.textContent = 'Failed to load selected image.';
-  }
-}
-
-
-
-/// INFERENCE STUFF ///
-/**
- * Runs object detection on an image element.
- *
- * This is the core inference operation. It deliberately has
- * no knowledge of UI rendering or where the image came from.
- *
- * @param {ObjectDetector} detector
- * @param {HTMLImageElement, HTMLVideoElement} imageElement
- * @returns {DetectionResult}
- */
-function runInference(detector, imageElement) {
-  return detector.detect(imageElement);
-}
-
-/**
- * Runs inference using the currently loaded uploaded image
- * and performs the existing uploaded-image UI/rendering.
- *
- * @param {ObjectDetector} detector
- */
-function runUploadedImageInference(detector) {
-  if (!imageReady) {
-    imageOutputBoxElement.textContent =
-      'No valid image loaded, please select an image...';
-    return;
-  }
-
-  imageOutputBoxElement.textContent = 'Running inference...';
-
-  const detectionResult = runInference(
-    detector,
-    testImageElement
-  );
-
-  // Bbox rendering
-  renderDetectionResult(
-    detectionResult,
-    canvasElement
-  );
-
-  // Textual output
-  const summaryText = `Inference complete. Detected ${detectionResult.detections.length} object(s).\n\n`;
-  imageOutputBoxElement.textContent = summaryText + renderDetectionResultText(detectionResult);
-
-}
-
-/**
- * Captures the current frame from the webcam video element,
- * runs inference through the existing detector pipeline,
- * and renders the detection result.
- */
-function runWebcamFrameInference() {
-  if (getCameraState() !== 'running') {
-    webcamOutputBoxElement.textContent = 'Camera is not active.';
-    return false;
-  }
-
-  prepareWebcamCanvas();
-
-  webcamOutputBoxElement.textContent = 'Running inference on camera frame...';
-
-  const inferenceStart = performance.now();
-
-  // detector.detect() accepts HTMLVideoElement directly and extracts the current frame
-  const detectionResult = runInference(objectDetector, cameraVideoElement);
-
-  const inferenceEnd = performance.now();
-  inferenceLatencyMs = inferenceEnd - inferenceStart;
-
-  inferenceCount++;
-
-  // Visual output
-  renderDetectionResult(
-    detectionResult,
-    webcamCanvasElement
-  );
-
-  const summaryText = `[Camera Snapshot] Detected ${detectionResult.detections.length} object(s).\n\n`;
-  webcamOutputBoxElement.textContent = summaryText + renderDetectionResultText(detectionResult);
-  return true;
-}
-
-/**
- * Starts running frame inference periodically at a specified frame rate.
- * @param {number} fps - Target detections per second (e.g., 5)
- */
-function startCameraInferenceLoop(fps = 5) {
-  stopCameraInferenceLoop(); // Clear any existing loop
-
-  const intervalMs = 1000 / fps; // 5 FPS = 200ms per frame
-  inferenceInterval = setInterval(() => {
-    if (getCameraState() === 'running' && objectDetector) {
-      const sampled = runWebcamFrameInference();
-
-      if (sampled) {
-        samplingCount++;
-      }
-    }
-  }, intervalMs);
-}
-
-function stopCameraInferenceLoop() {
-  if (inferenceInterval) {
-    clearInterval(inferenceInterval);
-    inferenceInterval = null;
-  }
-}
-
 
 /// ACTUALLY RUNNING THIS FILE ///
 checkBrowser();
