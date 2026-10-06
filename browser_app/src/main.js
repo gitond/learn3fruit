@@ -138,7 +138,7 @@ class Track {
     // Core spatial state (in pixel coordinates)
     this.center = { ...initialObservation.center };
     this.boundingBox = { ...initialObservation.boundingBox };
-    this.velocity = { x: 0, y: 0 }; // Velocity vector in pixels/ms
+    this.velocity = { vx: 0, vy: 0 }; // Velocity vector in pixels/ms
 
     // Temporal evidence & history
     this.history = [initialObservation];
@@ -154,6 +154,26 @@ class Track {
     this.updatedAt = initialObservation.timestamp;
     this.consecutiveHits = 1;
     this.consecutiveMisses = 0;
+  }
+
+  /*
+   * Appends a new observation, updates velocity, center, bounding box, and timestamps.
+   *
+   * @param {Observation} observation
+   */
+  addObservation(observation) {
+    this.history.push(observation);
+    this.categoryHistory.push({ category: observation.category, timestamp: observation.timestamp });
+
+    this.center = { ...observation.center };
+    this.boundingBox = { ...observation.boundingBox };
+    this.lastDetectionConfidence = observation.detectionConfidence;
+    this.updatedAt = observation.timestamp;
+    this.consecutiveHits += 1;
+    this.consecutiveMisses = 0;
+
+    // Recalculate velocity based on updated observation history
+    this.velocity = calculateVelocity(this.history);
   }
 }
 
@@ -760,9 +780,86 @@ class TemporalBuffer {
 }
 
 
-
-
 /// TRACKER: PREDICTIONS & MATCHING ///
+
+/*
+ * Calculates velocity vector (pixels/ms) from a track's observation history
+ * using a moving average over up to 5 recent points to smooth noise and
+ * handle direction changes/acceleration better.
+ *
+ * @param {Observation[]} history - Sequence of observations for a track, ordered chronologically
+ * @param {number} [maxPoints=5] - Maximum number of recent observations to include in moving average
+ * @returns {{ vx: number, vy: number }} Smoothed velocity components in pixels per millisecond
+ */
+function calculateVelocity(history, maxPoints = 5) {
+  if (!Array.isArray(history) || history.length < 2) {
+    return { vx: 0, vy: 0 };
+  }
+
+  // Take up to maxPoints recent observations from the tail of history
+  const sampleWindow = history.slice(-maxPoints);
+
+  let totalVx = 0;
+  let totalVy = 0;
+  let segmentCount = 0;
+
+  // Compute delta v across consecutive pairs in the sample window
+  for (let i = 1; i < sampleWindow.length; i++) {
+    const current = sampleWindow[i];
+    const previous = sampleWindow[i - 1];
+
+    const dt = current.timestamp - previous.timestamp;
+    if (dt > 0) {
+      const dx = current.center.centerX - previous.center.centerX;
+      const dy = current.center.centerY - previous.center.centerY;
+
+      totalVx += dx / dt;
+      totalVy += dy / dt;
+      segmentCount++;
+    }
+  }
+
+  if (segmentCount === 0) {
+    return { vx: 0, vy: 0 };
+  }
+
+  // Return averaged velocity components across all evaluated segments
+  return {
+    vx: totalVx / segmentCount,
+    vy: totalVy / segmentCount
+  };
+}
+
+/**
+ * Predicts the expected position of a track at a future timestamp.
+ *
+ * @param {Track} track - The target track object
+ * @param {number} targetTimestamp - Target time in milliseconds
+ * @returns {{ predictedCenterX: number, predictedCenterY: number }} Projected center coordinates
+ */
+function predictNextPosition(track, targetTimestamp) {
+  const currentCenter = track.center;
+  const lastUpdated = track.updatedAt ?? track.history[track.history.length - 1]?.timestamp ?? targetTimestamp;
+  const dt = targetTimestamp - lastUpdated;
+
+  // Read velocity components supporting both vx/vy and x/y property names
+  const vx = track.velocity.vx ?? track.velocity.x ?? 0;
+  const vy = track.velocity.vy ?? track.velocity.y ?? 0;
+
+  if (dt <= 0 || (vx === 0 && vy === 0)) {
+    return {
+      predictedCenterX: currentCenter.centerX,
+      predictedCenterY: currentCenter.centerY
+    };
+  }
+
+  return {
+    predictedCenterX: currentCenter.centerX + vx * dt,
+    predictedCenterY: currentCenter.centerY + vy * dt
+  };
+}
+
+
 /// TRACKER LIFECYCLE & STATE MANAGEMENT ///
 
 
