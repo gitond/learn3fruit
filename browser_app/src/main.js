@@ -55,6 +55,8 @@ let isRecording = false;
 let recordedData = []; // Stores array of measurement objects
 let sessionStartTime = null;
 
+let instanceCounter = 0; // For tracking instanceId generation
+
 function updateRunButtonState() { runButton.disabled = !(objectDetector && imageReady); }
 
 /// TRACKER DATA STRUCTURES & ADAPTERS ///
@@ -71,7 +73,7 @@ const TRACKER_CONFIG = {
   MIN_TRACK_CONFIDENCE: 0.50, // Minimum track confidence to consider an instance CONFIRMED
 
   // Lifecycle thresholds
-  CONFIRMATION_FRAMES: 3,     // Required consecutive detections before promotion from TENTATIVE
+  CONFIRMATION_FRAMES: 2,     // Required consecutive detections before promotion from TENTATIVE
   MISSING_FRAMES_LIMIT: 5,    // Consecutive missed frames before marking DELETED
 
   // Matching thresholds (in pixel space)
@@ -171,11 +173,46 @@ class Track {
     this.boundingBox = { ...observation.boundingBox };
     this.lastDetectionConfidence = observation.detectionConfidence;
     this.updatedAt = observation.timestamp;
-    this.consecutiveHits += 1;
-    this.consecutiveMisses = 0;
 
     // Recalculate velocity based on updated observation history
     this.velocity = calculateVelocity(this.history);
+  }
+
+  /*
+   * Updates track state upon a successful observation match (Hit).
+   *
+   * @param {Observation} observation
+   */
+  markHit(observation) {
+    this.addObservation(observation);
+
+    this.consecutiveHits += 1;
+    this.consecutiveMisses = 0;
+    this.trackConfidence = Math.min(1.0, this.trackConfidence + 0.20);
+
+    // Lifecycle status transitions
+    if (this.status === TrackStatus.TEMPORARILY_MISSING) {
+      this.status = TrackStatus.TENTATIVE;
+      this.consecutiveHits = 1;
+    } else if (this.status === TrackStatus.TENTATIVE && this.consecutiveHits >= TRACKER_CONFIG.CONFIRMATION_FRAMES) {
+      this.status = TrackStatus.CONFIRMED;
+    }
+  }
+
+  /*
+   * Updates track state upon a missing observation in a frame (Miss).
+   */
+  markMiss() {
+    this.consecutiveHits = 0;
+    this.consecutiveMisses += 1;
+    this.trackConfidence = Math.max(0.0, this.trackConfidence - 0.15);
+
+    // Lifecycle status transitions
+    if (this.consecutiveMisses >= TRACKER_CONFIG.MISSING_FRAMES_LIMIT) {
+      this.status = TrackStatus.DELETED;
+    } else {
+      this.status = TrackStatus.TEMPORARILY_MISSING;
+    }
   }
 
   /*
@@ -1015,6 +1052,78 @@ function matchObservationsToTracks(existingTracks = [], newObservations = []) {
 
 /// TRACKER LIFECYCLE & STATE MANAGEMENT ///
 
+/*
+ * Generates a unique instance identifier for newly spawned tracks.
+ * @returns {string}
+ */
+function generateInstanceId() {
+  instanceCounter += 1;
+  return `#${instanceCounter}`;
+}
+
+/*
+ * Minimal tracker implementation managing internal active track states,
+ * match lifecycle processing, track purging, and aggregated state snapshots.
+ */
+class InsDetTracker {
+  constructor() {
+    /** @type {Track[]} */
+    this.tracks = [];
+  }
+
+  /*
+   * Processes a single detection result payload, performs observation transformation,
+   * matches observations against existing tracks, applies lifecycle state updates,
+   * and purges deleted tracks.
+   *
+   * @param {Object} detectionResult - Raw MediaPipe detection result object
+   * @param {number} [timestamp=performance.now()] - Timestamp of the frame
+   * @returns {TrackerOutput} Aggregated tracked state payload
+   */
+  updateState(detectionResult, timestamp = performance.now()) {
+    // 1. Convert raw detections into an array of Observation objects
+    const detections = detectionResult?.detections ?? [];
+    const newObservations = detections.map(det => toObservation(det, timestamp));
+
+    // 2. Perform spatial & temporal observation-to-track matching
+    const matchResult = matchObservationsToTracks(this.tracks, newObservations);
+
+    // 3. Post-matching lifecycle updates
+    // A. Process matches (hits)
+    matchResult.matches.forEach(({ track, observation }) => {
+      track.markHit(observation);
+    });
+
+    // B. Process unmatched tracks (misses)
+    matchResult.unmatchedTracks.forEach(track => {
+      track.markMiss();
+    });
+
+    // C. Instantiate new TENTATIVE tracks for unmatched observations
+    const newTracks = matchResult.unmatchedObservations.map(observation => {
+      const id = generateInstanceId();
+      return new Track(id, observation);
+    });
+
+    // 4. Update internal state array and purge DELETED tracks
+    const updatedTracks = [...this.tracks, ...newTracks];
+    this.tracks = updatedTracks.filter(track => track.status !== TrackStatus.DELETED);
+
+    // 5. Return aggregated tracked state snapshot
+    return this.getTrackedState(timestamp);
+  }
+
+  /*
+   * Exposes current active tracks wrapped in a formal TrackerOutput object.
+   *
+   * @param {number} [timestamp=performance.now()]
+   * @returns {TrackerOutput}
+   */
+  getTrackedState(timestamp = performance.now()) {
+    const activeTracks = this.tracks.filter(track => track.status !== TrackStatus.DELETED);
+    return new TrackerOutput(timestamp, activeTracks);
+  }
+}
 
 /// DISPLAYING & RENDERING FUNCTIONS ///
 // Helper to generate a consistent HSL color based on string hash
