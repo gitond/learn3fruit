@@ -75,7 +75,9 @@ const TRACKER_CONFIG = {
   MISSING_FRAMES_LIMIT: 5,    // Consecutive missed frames before marking DELETED
 
   // Matching thresholds (in pixel space)
-  MAX_MATCH_DISTANCE_PX: 100
+  LOOSE_MATCH_DISTANCE_PX: 40,   // Standard match threshold for category matches/flip-flops
+  TIGHT_MATCH_DISTANCE_PX: 15,   // Strict threshold for mismatched categories without flip-flop history
+  BACKUP_MATCH_DISTANCE_PX: 60   // Velocity-direction alignment fallback threshold
 };
 
 /**
@@ -174,6 +176,17 @@ class Track {
 
     // Recalculate velocity based on updated observation history
     this.velocity = calculateVelocity(this.history);
+  }
+
+  /*
+   * Checks if a category label exists in this track's category history.
+   *
+   * @param {string} targetCategory
+   * @returns {boolean}
+   */
+  hasCategoryInHistory(targetCategory) {
+    if (!Array.isArray(this.categoryHistory)) return false;
+    return this.categoryHistory.some(entry => entry.category === targetCategory);
   }
 }
 
@@ -858,6 +871,146 @@ function predictNextPosition(track, targetTimestamp) {
     predictedCenterY: currentCenter.centerY + vy * dt
   };
 }
+
+/*
+ * Calculates Euclidean distance between two point objects
+ * { centerX, centerY } or { x, y }.
+ *
+ * @param {{ centerX?: number, centerY?: number, x?: number, y?: number }} p1
+ * @param {{ centerX?: number, centerY?: number, x?: number, y?: number }} p2
+ * @returns {number} Distance in pixels
+ */
+function calculateDistance(p1, p2) {
+  const x1 = p1.centerX ?? p1.x ?? 0;
+  const y1 = p1.centerY ?? p1.y ?? 0;
+  const x2 = p2.centerX ?? p2.x ?? 0;
+  const y2 = p2.centerY ?? p2.y ?? 0;
+
+  const dx = x1 - x2;
+  const dy = y1 - y2;
+  return Math.sqrt(dx * dx + dy * dy);
+}
+
+/*
+ * Matches new observations to existing active tracks using spatial predictions,
+ * category history weighting, and directional velocity scoring
+ * across 4 priority tiers.
+ *
+ * @param {Track[]} existingTracks - Array of active Track objects
+ * @param {Observation[]} newObservations - Array of new frame observations
+ * @returns {{
+ *   matches: Array<{ track: Track, observation: Observation }>,
+ *   unmatchedTracks: Track[],
+ *   unmatchedObservations: Observation[]
+ * }}
+ */
+function matchObservationsToTracks(existingTracks = [], newObservations = []) {
+  if (!Array.isArray(existingTracks) || existingTracks.length === 0) {
+    return {
+      matches: [],
+      unmatchedTracks: [...existingTracks],
+      unmatchedObservations: [...newObservations]
+    };
+  }
+
+  if (!Array.isArray(newObservations) || newObservations.length === 0) {
+    return {
+      matches: [],
+      unmatchedTracks: [...existingTracks],
+      unmatchedObservations: []
+    };
+  }
+
+  // Derive target timestamp dynamically from the incoming observation batch
+  const targetTimestamp = newObservations[0]?.timestamp ?? performance.now();
+
+  const matches = [];
+  const assignedTrackIds = new Set();
+  const assignedObservationIndices = new Set();
+
+  // 1. Compute predicted positions for all candidate tracks at the incoming frame timestamp
+  const trackPredictions = existingTracks.map(track => {
+    const predictedPos = predictNextPosition(track, targetTimestamp);
+    return {
+      track,
+      predictedCenter: {
+        centerX: predictedPos.predictedCenterX,
+        centerY: predictedPos.predictedCenterY
+      }
+    };
+  });
+
+  // 2. Build candidate pairs categorized by strict priority tiers
+  const candidatePairs = [];
+
+  trackPredictions.forEach(({ track, predictedCenter }) => {
+    newObservations.forEach((observation, obsIndex) => {
+      const distance = calculateDistance(predictedCenter, observation.center);
+      const isExactCategoryMatch = track.currentCategory === observation.category;
+      const isHistoricalCategoryMatch = track.hasCategoryInHistory(observation.category);
+
+      let priorityTier = null;
+
+      // Tier 1a: Tight distance & Historical Category Match
+      if (distance <= TRACKER_CONFIG.TIGHT_MATCH_DISTANCE_PX && (isExactCategoryMatch || isHistoricalCategoryMatch)) {
+        priorityTier = 1;
+      }
+      // Tier 1b: Tight distance & Any New Category
+      else if (distance <= TRACKER_CONFIG.TIGHT_MATCH_DISTANCE_PX) {
+        priorityTier = 2;
+      }
+      // Tier 2: Loose distance & Historical Category Match ONLY
+      else if (distance <= TRACKER_CONFIG.LOOSE_MATCH_DISTANCE_PX && (isExactCategoryMatch || isHistoricalCategoryMatch)) {
+        priorityTier = 3;
+      }
+      // Tier 3: Backup distance (<= 60px) & Historical Category Match ONLY
+      else if (distance <= TRACKER_CONFIG.BACKUP_MATCH_DISTANCE_PX && (isExactCategoryMatch || isHistoricalCategoryMatch)) {
+        priorityTier = 4;
+      }
+
+      if (priorityTier !== null) {
+        candidatePairs.push({
+          track,
+          observation,
+          obsIndex,
+          distance,
+          priorityTier
+        });
+      }
+    });
+  });
+
+  // 3. Resolve ambiguities by sorting primarily by priority tier and secondarily by distance
+  candidatePairs.sort((a, b) => {
+    if (a.priorityTier !== b.priorityTier) {
+      return a.priorityTier - b.priorityTier;
+    }
+    return a.distance - b.distance;
+  });
+
+  // 4. Greedy assignment based on strict priority ordering
+  candidatePairs.forEach(pair => {
+    if (!assignedTrackIds.has(pair.track.instanceId) && !assignedObservationIndices.has(pair.obsIndex)) {
+      assignedTrackIds.add(pair.track.instanceId);
+      assignedObservationIndices.add(pair.obsIndex);
+      matches.push({
+        track: pair.track,
+        observation: pair.observation
+      });
+    }
+  });
+
+  // 5. Gather remaining unmatched tracks and observations
+  const unmatchedTracks = existingTracks.filter(track => !assignedTrackIds.has(track.instanceId));
+  const unmatchedObservations = newObservations.filter((_, index) => !assignedObservationIndices.has(index));
+
+  return {
+    matches,
+    unmatchedTracks,
+    unmatchedObservations
+  };
+}
+
 
 
 /// TRACKER LIFECYCLE & STATE MANAGEMENT ///
