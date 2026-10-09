@@ -57,6 +57,9 @@ let sessionStartTime = null;
 
 let instanceCounter = 0; // For tracking instanceId generation
 
+// Global tracker instance
+let tracker = null;
+
 function updateRunButtonState() { runButton.disabled = !(objectDetector && imageReady); }
 
 /// TRACKER DATA STRUCTURES & ADAPTERS ///
@@ -292,6 +295,9 @@ async function startApplication() {
       scoreThreshold: 0.35,
       runningMode: 'IMAGE'
     });
+
+    // Initialize the tracking engine
+    tracker = new InsDetTracker();
 
     modelStatusElement.textContent = 'Model loaded and compiled successfully!';
     setStatus('Application started successfully.');
@@ -652,6 +658,15 @@ function runWebcamFrameInference() {
 
   // detector.detect() accepts HTMLVideoElement directly and extracts the current frame
   const detectionResult = runInference(objectDetector, cameraVideoElement);
+
+  // Update tracking state with current frame detection results
+  const trackerOutput = tracker.updateState(detectionResult, performance.now());
+
+  // Log active tracks info
+  if (trackerOutput.tracks.length > 0) {
+    const trackSummaries = trackerOutput.tracks.map(t => `${t.instanceId} [${t.currentCategory}]: ${t.status}`).join(' | ');
+    console.log(`[InsDetTracker] Active tracks: ${trackSummaries}`);
+  }
 
   const inferenceEnd = performance.now();
   inferenceLatencyMs = inferenceEnd - inferenceStart;
