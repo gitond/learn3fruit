@@ -62,16 +62,9 @@ function updateRunButtonState() { runButton.disabled = !(objectDetector && image
 /// TRACKER DATA STRUCTURES & ADAPTERS ///
 
 /**
- * Constants governing tracking configuration and confidence thresholds.
+ * Constants governing tracking configuration.
  */
 const TRACKER_CONFIG = {
-  // Window parameters for temporal reasoning
-  BUFFER_WINDOW_MS: 500, // Minimal time window (y_ms)
-  MIN_BUFFER_FRAMES: 10, // Minimal frame count window (x_frames)
-
-  // Confidence thresholds
-  MIN_TRACK_CONFIDENCE: 0.50, // Minimum track confidence to consider an instance CONFIRMED
-
   // Lifecycle thresholds
   CONFIRMATION_FRAMES: 2,     // Required consecutive detections before promotion from TENTATIVE
   MISSING_FRAMES_LIMIT: 5,    // Consecutive missed frames before marking DELETED
@@ -114,25 +107,11 @@ class Observation {
 }
 
 /**
- * Data structure representing a list of observations for one inference frame.
- */
-class TrackerInput {
-  /**
-   * @param {number} timestamp
-   * @param {Observation[]} observations
-   */
-  constructor(timestamp, observations = []) {
-    this.timestamp = timestamp;
-    this.observations = observations;
-  }
-}
-
-/**
  * Represents a persistent hypothesis that multiple observations belong to the same physical object.
  */
 class Track {
   /**
-   * @param {string} instanceId - Unique identifier (e.g. "inst_1")
+   * @param {string} instanceId - Unique identifier (e.g. "#1")
    * @param {Observation} initialObservation - First observation that spawned this track
    */
   constructor(instanceId, initialObservation) {
@@ -144,14 +123,14 @@ class Track {
     this.boundingBox = { ...initialObservation.boundingBox };
     this.velocity = { vx: 0, vy: 0 }; // Velocity vector in pixels/ms
 
-    // Temporal evidence & history
+    // Temporal evidence & history (bounded sliding window of 5 observations max)
     this.history = [initialObservation];
-    this.categoryHistory = [{ category: initialObservation.category, timestamp: initialObservation.timestamp }];
+    this.categoryHistory = new Set([initialObservation.category]);
     this.currentCategory = initialObservation.category;
 
-    // Separate confidence metrics
+    // Detection metadata & track history tracker
     this.lastDetectionConfidence = initialObservation.detectionConfidence;
-    this.trackConfidence = 0.30; // Initial tentative track confidence score
+    this.hasBeenConfirmed = false;
 
     // Counters and timestamps
     this.createdAt = initialObservation.timestamp;
@@ -162,12 +141,18 @@ class Track {
 
   /*
    * Appends a new observation, updates velocity, center, bounding box, and timestamps.
+   * Maintains a maximum sliding history window of 5 observations.
    *
    * @param {Observation} observation
    */
   addObservation(observation) {
     this.history.push(observation);
-    this.categoryHistory.push({ category: observation.category, timestamp: observation.timestamp });
+    if (this.history.length > 5) {
+      this.history.shift();
+    }
+
+    this.categoryHistory.add(observation.category);
+    this.currentCategory = observation.category;
 
     this.center = { ...observation.center };
     this.boundingBox = { ...observation.boundingBox };
@@ -188,14 +173,13 @@ class Track {
 
     this.consecutiveHits += 1;
     this.consecutiveMisses = 0;
-    this.trackConfidence = Math.min(1.0, this.trackConfidence + 0.20);
 
     // Lifecycle status transitions
     if (this.status === TrackStatus.TEMPORARILY_MISSING) {
-      this.status = TrackStatus.TENTATIVE;
-      this.consecutiveHits = 1;
+      this.status = this.hasBeenConfirmed ? TrackStatus.CONFIRMED : TrackStatus.TENTATIVE;
     } else if (this.status === TrackStatus.TENTATIVE && this.consecutiveHits >= TRACKER_CONFIG.CONFIRMATION_FRAMES) {
       this.status = TrackStatus.CONFIRMED;
+      this.hasBeenConfirmed = true;
     }
   }
 
@@ -205,7 +189,6 @@ class Track {
   markMiss() {
     this.consecutiveHits = 0;
     this.consecutiveMisses += 1;
-    this.trackConfidence = Math.max(0.0, this.trackConfidence - 0.15);
 
     // Lifecycle status transitions
     if (this.consecutiveMisses >= TRACKER_CONFIG.MISSING_FRAMES_LIMIT) {
@@ -222,8 +205,7 @@ class Track {
    * @returns {boolean}
    */
   hasCategoryInHistory(targetCategory) {
-    if (!Array.isArray(this.categoryHistory)) return false;
-    return this.categoryHistory.some(entry => entry.category === targetCategory);
+    return this.categoryHistory.has(targetCategory);
   }
 }
 
@@ -285,24 +267,6 @@ function toObservation(detection, timestamp = performance.now()) {
   });
 }
 
-/**
- * Converts a raw MediaPipe DetectionResult payload into a normalized TrackerInput object.
- *
- * @param {Object} detectionResult - Raw output from objectDetector.detect()
- * @param {number} timestamp - High-resolution timestamp
- * @returns {TrackerInput}
- */
-function toTrackerInput(detectionResult, timestamp = performance.now()) {
-  if (!detectionResult || !Array.isArray(detectionResult.detections)) {
-    return new TrackerInput(timestamp, []);
-  }
-
-  const observations = detectionResult.detections.map(detection =>
-    toObservation(detection, timestamp)
-  );
-
-  return new TrackerInput(timestamp, observations);
-}
 
 
 
@@ -735,110 +699,14 @@ function stopCameraInferenceLoop() {
 }
 
 
-/// TRACKER BUFFER ENGINE ///
-
-/**
- * Temporal history queue for tracking observations.
- *
- * Implements dual temporal/frame-count eviction logic:
- *   should_dequeue = enough_frames && enough_time
- *
- * Where:
- *   enough_frames : buffer.length > TRACKER_CONFIG.MIN_BUFFER_FRAMES
- *   enough_time   : current_timestamp - oldest_entry.timestamp > TRACKER_CONFIG.BUFFER_WINDOW_MS
- */
-class TemporalBuffer {
-  /**
-   * @param {Object} [config=TRACKER_CONFIG]
-   */
-  constructor(config = TRACKER_CONFIG) {
-    this.buffer = [];
-    this.minBufferFrames = config.MIN_BUFFER_FRAMES;
-    this.bufferWindowMs = config.BUFFER_WINDOW_MS;
-  }
-
-  /**
-   * Enqueues a new TrackerInput frame observation and triggers the dequeue check.
-   *
-   * @param {TrackerInput} trackerInput - Normalized frame observations with timestamp
-   */
-  enqueue(trackerInput) {
-    if (!trackerInput || typeof trackerInput.timestamp !== 'number') {
-      return;
-    }
-
-    this.buffer.push(trackerInput);
-    this._evictStaleEntries(trackerInput.timestamp);
-  }
-
-  /**
-   * Internal dequeue check that purges stale entries from the front of the queue.
-   *
-   * @param {number} currentTimestamp - Timestamp of the most recently enqueued frame
-   * @private
-   */
-  _evictStaleEntries(currentTimestamp) {
-    while (this.buffer.length > 0) {
-      const oldestEntry = this.buffer[0];
-      const timeElapsed = currentTimestamp - oldestEntry.timestamp;
-
-      const enoughFrames = this.buffer.length > this.minBufferFrames;
-      const enoughTime = timeElapsed > this.bufferWindowMs;
-
-      // Dequeue if and only if both conditions are met
-      if (enoughFrames && enoughTime) {
-        this.buffer.shift();
-      } else {
-        break; // Stop checking once the oldest remaining entry should not be dequeued
-      }
-    }
-  }
-
-  /**
-   * Returns a copy of all current TrackerInput entries stored in the buffer.
-   *
-   * @returns {TrackerInput[]}
-   */
-  getEntries() {
-    return [...this.buffer];
-  }
-
-  /**
-   * Flattens and returns all observations stored across all frames in the buffer.
-   *
-   * @returns {Observation[]}
-   */
-  getAllObservations() {
-    return this.buffer.flatMap(entry => entry.observations);
-  }
-
-  /**
-   * Returns the current number of frames in the buffer.
-   *
-   * @returns {number}
-   */
-  getFrameCount() {
-    return this.buffer.length;
-  }
-
-  /**
-   * Clears all entries from the buffer.
-   */
-  clear() {
-    this.buffer = [];
-  }
-}
-
-
 /// TRACKER: PREDICTIONS & MATCHING ///
 
 /*
  * Calculates velocity vector (pixels/ms) from a track's observation history
- * using a moving average over up to 5 recent points to smooth noise and
- * handle direction changes/acceleration better.
+ * using a moving average over recent points.
  *
  * @param {Observation[]} history - Sequence of observations for a track, ordered chronologically
- * @param {number} [maxPoints=5] - Maximum number of recent observations to include in moving average
+ * @param {number} [maxPoints=5] - Maximum number of recent observations to include
  * @returns {{ vx: number, vy: number }} Smoothed velocity components in pixels per millisecond
  */
 function calculateVelocity(history, maxPoints = 5) {
@@ -889,12 +757,10 @@ function calculateVelocity(history, maxPoints = 5) {
  */
 function predictNextPosition(track, targetTimestamp) {
   const currentCenter = track.center;
-  const lastUpdated = track.updatedAt ?? track.history[track.history.length - 1]?.timestamp ?? targetTimestamp;
+  const lastUpdated = track.updatedAt ?? targetTimestamp;
   const dt = targetTimestamp - lastUpdated;
 
-  // Read velocity components supporting both vx/vy and x/y property names
-  const vx = track.velocity.vx ?? track.velocity.x ?? 0;
-  const vy = track.velocity.vy ?? track.velocity.y ?? 0;
+  const { vx, vy } = track.velocity;
 
   if (dt <= 0 || (vx === 0 && vy === 0)) {
     return {
@@ -910,21 +776,15 @@ function predictNextPosition(track, targetTimestamp) {
 }
 
 /*
- * Calculates Euclidean distance between two point objects
- * { centerX, centerY } or { x, y }.
+ * Calculates Euclidean distance between two point objects { centerX, centerY }.
  *
- * @param {{ centerX?: number, centerY?: number, x?: number, y?: number }} p1
- * @param {{ centerX?: number, centerY?: number, x?: number, y?: number }} p2
+ * @param {{ centerX: number, centerY: number }} p1
+ * @param {{ centerX: number, centerY: number }} p2
  * @returns {number} Distance in pixels
  */
 function calculateDistance(p1, p2) {
-  const x1 = p1.centerX ?? p1.x ?? 0;
-  const y1 = p1.centerY ?? p1.y ?? 0;
-  const x2 = p2.centerX ?? p2.x ?? 0;
-  const y2 = p2.centerY ?? p2.y ?? 0;
-
-  const dx = x1 - x2;
-  const dy = y1 - y2;
+  const dx = p1.centerX - p2.centerX;
+  const dy = p1.centerY - p2.centerY;
   return Math.sqrt(dx * dx + dy * dy);
 }
 
@@ -1050,6 +910,8 @@ function matchObservationsToTracks(existingTracks = [], newObservations = []) {
 
 
 
+
+
 /// TRACKER LIFECYCLE & STATE MANAGEMENT ///
 
 /*
@@ -1062,7 +924,7 @@ function generateInstanceId() {
 }
 
 /*
- * Minimal tracker implementation managing internal active track states,
+ * Primary tracker implementation managing internal active track states,
  * match lifecycle processing, track purging, and aggregated state snapshots.
  */
 class InsDetTracker {
@@ -1124,6 +986,8 @@ class InsDetTracker {
     return new TrackerOutput(timestamp, activeTracks);
   }
 }
+
+
 
 /// DISPLAYING & RENDERING FUNCTIONS ///
 // Helper to generate a consistent HSL color based on string hash
