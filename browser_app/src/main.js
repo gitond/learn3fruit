@@ -38,6 +38,7 @@ const webcamOutputBoxElement = document.querySelector('#webcam-output-box');
 const recordCsvToggle = document.querySelector('#record-csv-toggle');
 const downloadCsvBtn = document.querySelector('#download-csv-btn');
 const recordStatusElement = document.querySelector('#record-status');
+const downloadTrackingBtn = document.querySelector('#download-tracking-btn');
 
 /// APPLICATION STATE ///
 let objectDetector = null;
@@ -57,10 +58,25 @@ let sessionStartTime = null;
 
 let instanceCounter = 0; // For tracking instanceId generation
 
+// Detections + tracking recorder (independent of the FPS CSV recorder)
+let trackingRecordingData = [];
+let trackingSessionMetadata = null;
+let trackingFrameIndex = 0;
+let isTrackingRecording = false;
+let trackingRecordingFinalized = false;
+
 // Global tracker instance
 let tracker = null;
 
 function updateRunButtonState() { runButton.disabled = !(objectDetector && imageReady); }
+
+
+/// CONFIG CONSTANTS ///
+const TARGET_SAMPLING_FPS = 8;
+const TRACKING_SCHEMA_VERSION = 1;
+
+
+
 
 /// TRACKER DATA STRUCTURES & ADAPTERS ///
 
@@ -270,6 +286,15 @@ function toObservation(detection, timestamp = performance.now()) {
   });
 }
 
+function getTrackerConfigurationSnapshot() {
+  return {
+    CONFIRMATION_FRAMES: TRACKER_CONFIG.CONFIRMATION_FRAMES,
+    MISSING_FRAMES_LIMIT: TRACKER_CONFIG.MISSING_FRAMES_LIMIT,
+    LOOSE_MATCH_DISTANCE_PX: TRACKER_CONFIG.LOOSE_MATCH_DISTANCE_PX,
+    TIGHT_MATCH_DISTANCE_PX: TRACKER_CONFIG.TIGHT_MATCH_DISTANCE_PX,
+    BACKUP_MATCH_DISTANCE_PX: TRACKER_CONFIG.BACKUP_MATCH_DISTANCE_PX
+  };
+}
 
 
 
@@ -277,6 +302,8 @@ function toObservation(detection, timestamp = performance.now()) {
 async function startApplication() {
   applicationStatusElement.textContent = 'Initializing MediaPipe Vision WASM...';
   setStatus('Loading runtime...');
+
+  downloadTrackingBtn.disabled = true;
 
   try {
     // 1. Resolve WASM assets served from /wasm/
@@ -307,8 +334,10 @@ async function startApplication() {
     imageInputElement.addEventListener('change', handleImageSelection);
     runButton.addEventListener('click', () => runUploadedImageInference(objectDetector));
     updateRunButtonState();
+    // - measurements
     recordCsvToggle.addEventListener('change', handleToggleRecording);
     downloadCsvBtn.addEventListener('click', downloadCsvFile);
+    downloadTrackingBtn.addEventListener('click', downloadTrackingFile);
     // - camera
     cameraStartBtn.addEventListener('click', handleStartCamera);
     cameraStopBtn.addEventListener('click', handleStopCamera);
@@ -414,9 +443,14 @@ async function handleStartCamera() {
     // Start UI update timer for rendering current FPS
     startFpsUiLoop();
 
+    // Start a fresh recording session if the toggle is checked
+    if (recordCsvToggle.checked) {
+      restartRecordingSessionForCamera();
+    }
+
     // Start running inference at specified FPS
     startInferenceMeasurements();
-    startCameraInferenceLoop(14);
+    startCameraInferenceLoop(TARGET_SAMPLING_FPS);
   } catch (error) {
     cameraStartBtn.disabled = false;
     cameraStopBtn.disabled = true;
@@ -461,10 +495,12 @@ function handleStopCamera() {
       webcamCanvasElement.height
     );
 
-  // Reset recording
+  // Finalize recording when the camera stops
   if (isRecording) {
+    finalizeRecordingForCameraStop();
+
+    // Reset the shared toggle without invoking the toggle handler again
     recordCsvToggle.checked = false;
-    handleToggleRecording({ target: { checked: false } });
   }
 }
 
@@ -539,24 +575,35 @@ function stopInferenceMeasurements() {
 }
 
 function handleToggleRecording(event) {
-    isRecording = event.target.checked;
+  isRecording = event.target.checked;
 
-    if (isRecording) {
-        // Reset buffers for new recording session
-        recordedData = [];
-        sessionStartTime = new Date();
-        downloadCsvBtn.disabled = true;
-        recordStatusElement.textContent = 'Recording started...';
-    } else {
-        // Stopped recording
-        const sampleCount = recordedData.length;
-        if (sampleCount > 0) {
-            downloadCsvBtn.disabled = false;
-            recordStatusElement.textContent = `Stopped. ${sampleCount} samples ready.`;
-        } else {
-            recordStatusElement.textContent = 'Stopped (no samples recorded).';
-        }
-    }
+  if (isRecording) {
+    // Existing FPS CSV recorder.
+    recordedData = [];
+    sessionStartTime = new Date();
+    downloadCsvBtn.disabled = true;
+
+    // New, independent tracking recorder.
+    startTrackingRecording();
+
+    recordStatusElement.textContent = 'Recording started...';
+    return;
+  }
+
+  // Stop both recorders.
+  stopTrackingRecording();
+
+  const sampleCount = recordedData.length;
+
+  if (sampleCount > 0) {
+    downloadCsvBtn.disabled = false;
+    recordStatusElement.textContent =
+      `Stopped. ${sampleCount} FPS samples ready.`;
+  } else {
+    downloadCsvBtn.disabled = true;
+    recordStatusElement.textContent =
+      'Stopped (no FPS samples recorded).';
+  }
 }
 
 function downloadCsvFile() {
@@ -590,6 +637,163 @@ function downloadCsvFile() {
     document.body.removeChild(anchor);
     URL.revokeObjectURL(url);
 }
+
+function generateTrackingExperimentId() {
+  const timestamp = new Date()
+    .toISOString()
+    .replace(/[-:]/g, '')
+    .replace(/\.\d{3}Z$/, 'Z');
+
+  const uniqueSuffix = crypto.randomUUID().slice(0, 8);
+
+  return `tracking_${timestamp}_${uniqueSuffix}`;
+}
+
+function startTrackingRecording() {
+  trackingRecordingData = [];
+  trackingFrameIndex = 0;
+
+  const now = new Date();
+
+  trackingSessionMetadata = {
+    record_type: 'metadata',
+    schema_version: TRACKING_SCHEMA_VERSION,
+    experiment_id: generateTrackingExperimentId(),
+    scenario: '',
+    custom_notes: '',
+    tracker_config: getTrackerConfigurationSnapshot(),
+    target_sampling_fps: TARGET_SAMPLING_FPS,
+    start_time_utc: now.toISOString(),
+    end_time_utc: null,
+    frame_count: 0
+  };
+
+  isTrackingRecording = true;
+  trackingRecordingFinalized = false;
+  downloadTrackingBtn.disabled = true;
+
+  recordStatusElement.textContent =
+    'Recording FPS and detections + tracking...';
+}
+
+function stopTrackingRecording() {
+  if (!isTrackingRecording) return;
+
+  isTrackingRecording = false;
+  trackingRecordingFinalized = true;
+
+  if (trackingSessionMetadata) {
+    trackingSessionMetadata.end_time_utc =
+      new Date().toISOString();
+
+    trackingSessionMetadata.frame_count =
+      trackingRecordingData.length;
+  }
+
+  downloadTrackingBtn.disabled =
+    trackingRecordingData.length === 0;
+
+  if (trackingRecordingData.length > 0) {
+    recordStatusElement.textContent =
+      `Recording stopped. ${trackingRecordingData.length} tracking frames ready.`;
+  }
+}
+
+function recordTrackingFrame(
+  detectionResult,
+  trackerOutput,
+  timestampMs
+) {
+  if (!isTrackingRecording || !trackingSessionMetadata) return;
+
+  // Snapshot both objects at the time of this inference.
+  // JSON serialization also converts class instances into plain data.
+  const detectionsSnapshot = JSON.parse(
+    JSON.stringify(detectionResult ?? null)
+  );
+
+  const trackerStateSnapshot = JSON.parse(
+    JSON.stringify(trackerOutput ?? null)
+  );
+
+  trackingRecordingData.push({
+    record_type: 'frame',
+    frame_index: trackingFrameIndex,
+    timestamp_ms: timestampMs,
+    detections: detectionsSnapshot,
+    tracker_state: trackerStateSnapshot
+  });
+
+  trackingFrameIndex++;
+}
+
+function downloadTrackingFile() {
+  if (
+    !trackingRecordingFinalized ||
+    !trackingSessionMetadata ||
+    trackingRecordingData.length === 0
+  ) {
+    return;
+  }
+
+  const lines = [
+    JSON.stringify(trackingSessionMetadata),
+    ...trackingRecordingData.map(record => JSON.stringify(record))
+  ];
+
+  const blob = new Blob(
+    [lines.join('\n') + '\n'],
+    { type: 'application/x-ndjson;charset=utf-8' }
+  );
+
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+
+  anchor.href = url;
+  anchor.download = `${trackingSessionMetadata.experiment_id}.jsonl`;
+
+  document.body.appendChild(anchor);
+  anchor.click();
+  document.body.removeChild(anchor);
+
+  // Delay revocation slightly to allow the browser to begin the download.
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function restartRecordingSessionForCamera() {
+  // Called only when the shared toggle is checked.
+  // Starting a new camera run begins a fresh recording session.
+  if (!recordCsvToggle.checked) return;
+
+  isRecording = true;
+
+  // Reset the existing FPS CSV recorder.
+  recordedData = [];
+  sessionStartTime = new Date();
+  downloadCsvBtn.disabled = true;
+
+  // Reset the new tracking recorder.
+  startTrackingRecording();
+
+  recordStatusElement.textContent =
+    'Recording started for the new camera run...';
+}
+
+function finalizeRecordingForCameraStop() {
+  // Finalize the JSONL session.
+  stopTrackingRecording();
+
+  // End FPS recording without clearing its collected data.
+  isRecording = false;
+
+  if (recordedData.length > 0) {
+    downloadCsvBtn.disabled = false;
+  } else {
+    downloadCsvBtn.disabled = true;
+  }
+}
+
+
 
 
 /// INFERENCE STUFF ///
@@ -660,21 +864,33 @@ function runWebcamFrameInference() {
   const detectionResult = runInference(objectDetector, cameraVideoElement);
 
   // Update tracking state with current frame detection results
-  const trackerOutput = tracker.updateState(detectionResult, performance.now());
+  const frameTimestamp = performance.now();
+  const trackerOutput = tracker.updateState(detectionResult, frameTimestamp);
 
-  // Log active tracks info
-  if (trackerOutput.tracks.length > 0) {
-    const trackSummaries = trackerOutput.tracks.map(t => `${t.instanceId} [${t.currentCategory}]: ${t.status}`).join(' | ');
-    console.log(`[InsDetTracker] Active tracks: ${trackSummaries}`);
-  }
+  // Record detector input and the resulting tracker state together.
+  recordTrackingFrame(
+    detectionResult,
+    trackerOutput,
+    frameTimestamp
+  );
+
 
   const inferenceEnd = performance.now();
   inferenceLatencyMs = inferenceEnd - inferenceStart;
 
   inferenceCount++;
 
+  /* Debug prints. Comment out what you need. Dev time. */
   // Inference result output. Several times per s. Comment out when not using.
   //console.log(`[Webcam inference] ${inferenceLatencyMs.toFixed(2)} ms`, detectionResult);
+  /*
+  // Log active tracks info
+  if (trackerOutput.tracks.length > 0) {
+    const trackSummaries = trackerOutput.tracks.map(t => `${t.instanceId} [${t.currentCategory}]: ${t.status}`).join(' | ');
+    console.log(`[InsDetTracker] Active tracks: ${trackSummaries}`);
+  }
+  */
+
 
   // Visual output
   renderDetectionResult(

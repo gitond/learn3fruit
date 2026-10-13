@@ -1,0 +1,126 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "tracking-record-v1.schema.json",
+  "title": "Tracking Experiment JSONL Record Schema, Version 1",
+  "description": "Defines the metadata and frame records used in tracking experiment JSONL files. Each JSONL line must match one of these record types.",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/metadataRecord"
+    },
+    {
+      "$ref": "#/$defs/frameRecord"
+    }
+  ],
+  "$defs": {
+    "metadataRecord": {
+      "type": "object",
+      "required": [
+        "record_type",
+        "schema_version",
+        "experiment_id",
+        "scenario",
+        "custom_notes",
+        "tracker_config",
+        "target_sampling_fps",
+        "start_time_utc",
+        "end_time_utc",
+        "frame_count"
+      ],
+      "properties": {
+        "record_type": {
+          "const": "metadata"
+        },
+        "schema_version": {
+          "const": 1
+        },
+        "experiment_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "scenario": {
+          "type": "string"
+        },
+        "custom_notes": {
+          "type": "string"
+        },
+        "tracker_config": {
+          "type": "object",
+          "required": [
+            "CONFIRMATION_FRAMES",
+            "MISSING_FRAMES_LIMIT",
+            "LOOSE_MATCH_DISTANCE_PX",
+            "TIGHT_MATCH_DISTANCE_PX",
+            "BACKUP_MATCH_DISTANCE_PX"
+          ],
+          "properties": {
+            "CONFIRMATION_FRAMES": {
+              "type": "integer"
+            },
+            "MISSING_FRAMES_LIMIT": {
+              "type": "integer"
+            },
+            "LOOSE_MATCH_DISTANCE_PX": {
+              "type": "number"
+            },
+            "TIGHT_MATCH_DISTANCE_PX": {
+              "type": "number"
+            },
+            "BACKUP_MATCH_DISTANCE_PX": {
+              "type": "number"
+            }
+          },
+          "additionalProperties": true
+        },
+        "target_sampling_fps": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "start_time_utc": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "end_time_utc": {
+          "type": ["string", "null"],
+          "format": "date-time"
+        },
+        "frame_count": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": true
+    },
+    "frameRecord": {
+      "type": "object",
+      "required": [
+        "record_type",
+        "frame_index",
+        "timestamp_ms",
+        "detections",
+        "tracker_state"
+      ],
+      "properties": {
+        "record_type": {
+          "const": "frame"
+        },
+        "frame_index": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "timestamp_ms": {
+          "type": "number",
+          "minimum": 0
+        },
+        "detections": {
+          "type": ["object", "null"],
+          "description": "Raw detector result supplied to InsDetTracker.updateState()."
+        },
+        "tracker_state": {
+          "type": ["object", "null"],
+          "description": "Serialized TrackerOutput returned by the tracker update."
+        }
+      },
+      "additionalProperties": true
+    }
+  }
+}
