@@ -46,6 +46,10 @@ Libraries:
 
 ```{r}
 library(jsonlite)
+suppressPackageStartupMessages(library(dplyr)) # <- Don't print warning on import
+suppressPackageStartupMessages(library(purrr)) # object masked: jsonlite: flatten
+library(tibble)
+library(ggplot2)
 ```
 
 Functions:
@@ -105,6 +109,192 @@ chunk_string <- function(s, width = 90) {
   starts <- seq(1, n, by = width)
   ends <- pmin(starts + width - 1, n)
   substring(s, starts, ends)
+}
+
+
+
+print_category_history_values <- function(data, data_name = deparse(substitute(data))) {
+  # Keep only frame records
+  frame_records <- Filter(
+    function(record) identical(record$record_type, "frame"),
+    data
+  )
+
+  # Collect categoryHistory from every track in every frame
+  histories <- unlist(
+    lapply(frame_records, function(record) {
+      tracks <- record$tracker_state$tracks
+
+      if (is.null(tracks) || length(tracks) == 0) {
+        return(list())
+      }
+
+      lapply(tracks, function(track) {
+        track$categoryHistory
+      })
+    }),
+    recursive = FALSE
+  )
+
+  # Handle the case where no tracks or histories were found
+  if (length(histories) == 0) {
+    cat(
+      "Here are all the different categoryHistory values in tracks ",
+      "in frame-records in ", data_name, ":\n\n",
+      "(No categoryHistory values found.)\n",
+      sep = ""
+    )
+    return(invisible(NULL))
+  }
+
+  # Convert each history to a consistent JSON representation
+  history_json <- vapply(histories, function(history) {
+    if (is.null(history)) {
+      return("null")
+    }
+
+    jsonlite::toJSON(
+      history,
+      auto_unbox = TRUE,
+      null = "null",
+      na = "null",
+      pretty = FALSE
+    ) |>
+      as.character()
+  }, character(1))
+
+  # Print unique values, preserving their first-seen order
+  unique_histories <- unique(history_json)
+
+  cat(
+    "Here are all the different categoryHistory values in tracks ",
+    "in frame-records in ", data_name, ":\n\n",
+    paste(unique_histories, collapse = "\n"),
+    "\n",
+    sep = ""
+  )
+
+  invisible(unique_histories)
+}
+
+# Function for producing (timestamp, hasBeenConfirmed-count) pairs over a tX
+confirmed_tracks_over_time <- function(data) {
+  keep <- which(vapply(
+    data,
+    function(record) identical(record$record_type, "frame"),
+    logical(1)
+  ))
+
+  map_dfr(keep, function(i) {
+    record <- data[[i]]
+    tracks <- record$tracker_state$tracks
+
+    confirmed_count <- if (is.null(tracks) || length(tracks) == 0) {
+      0L
+    } else {
+      sum(vapply(
+        tracks,
+        function(track) isTRUE(track$hasBeenConfirmed),
+        logical(1)
+      ))
+    }
+
+    tibble(
+      timestamp_ms = record$timestamp_ms,
+      confirmed_tracks = confirmed_count
+    )
+  })
+}
+
+plot_track_trajectories <- function(records, width = 640, height = 480) {
+
+  points <- map2_dfr(records, seq_along(records), function(record, i) {
+    tracks <- record$tracker_state$tracks
+
+    if (is.null(tracks) || length(tracks) == 0) {
+      return(tibble())
+    }
+
+    map_dfr(tracks, function(track) {
+      center <- track$center
+
+      if (is.null(center) ||
+          is.null(center$centerX) ||
+          is.null(center$centerY)) {
+        return(tibble())
+      }
+
+      tibble(
+        frame = i,
+        timestamp_ms = as.numeric(record$timestamp_ms),
+        track_id = as.character(track$instanceId),
+        x = as.numeric(center$centerX),
+        y = as.numeric(center$centerY)
+      )
+    })
+  })
+
+  if (nrow(points) == 0) {
+    stop("No track centers found in the supplied records.")
+  }
+
+  points <- points %>%
+    distinct(track_id, x, y, .keep_all = TRUE) %>%
+    arrange(track_id, frame)
+
+  # Create a segment from each center to the next center of that track.
+  segments <- points %>%
+    group_by(track_id) %>%
+    mutate(
+      xend = lead(x),
+      yend = lead(y)
+    ) %>%
+    filter(!is.na(xend), !is.na(yend)) %>%
+    ungroup()
+
+  ggplot() +
+    geom_segment(
+      data = segments,
+      aes(
+        x = x, y = y,
+        xend = xend, yend = yend,
+        color = track_id
+      ),
+      arrow = grid::arrow(
+        length = grid::unit(0.15, "inches"),
+        type = "closed"
+      ),
+      linewidth = 0.8,
+      lineend = "round"
+    ) +
+    geom_point(
+      data = points,
+      aes(x = x, y = y, color = track_id),
+      size = 2.5
+    ) +
+    scale_x_continuous(
+      position = "top",
+      limits = c(0, width),
+      breaks = seq(0, width, by = 80),
+      expand = c(0, 0)
+    ) +
+    scale_y_reverse(
+      limits = c(height, 0),
+      breaks = seq(0, height, by = 60),
+      expand = c(0, 0)
+    ) +
+    coord_fixed() +
+    labs(
+      title = "Track trajectories",
+      x = "X coordinate (pixels)",
+      y = "Y coordinate (pixels)",
+      color = "Track ID"
+    ) +
+    theme_minimal(base_size = 12) +
+    theme(
+      panel.grid.minor = element_blank(),
+      legend.position = "right"
+    )
 }
 ```
 
@@ -255,3 +445,151 @@ Track timeline:
 ```{r}
 print_track_timeline(t7)
 ```
+
+### Data exploration: qualitative analysis
+
+Here's what merely examining the output data tells us:  
+
+#### `categoryHistory` recording seemingly broken in the dataformat  
+  
+Looking at the first 5 lines and last 10 lines of the contents of `t2` we 
+printed out: Specifically where `"record_type":"frame"`: for each track in 
+`tracker_state.tracks` `categoryHistory` always seems to be `{}`. To confirm 
+that the data is indeed broken we wrote the `print_category_history_values` 
+to iterate over each measurement result and print out all unique category 
+history values. We'll run it on all of our data now:
+
+```{r}
+print_category_history_values(t1)
+print_category_history_values(t2)
+print_category_history_values(t3)
+print_category_history_values(t4)
+print_category_history_values(t5)
+print_category_history_values(t6)
+print_category_history_values(t7)
+```
+
+This confirms that category history saving in our data is broken. This 
+warrants further investigation.  
+
+#### Rapid movement problematic for tracking  
+  
+This is clearly seen since we conduct measurements which differ from each 
+other in movement speed and also performance. In `t1` we have a single 
+stationary object. In `t3` we have a single slowly moving object and in `t4` 
+we have a single repidly moving object. By looking at the timeline of the 
+last 20 frames for each of these measurements we see:
+
+```{r}
+print_track_timeline(tail(t1, 20))
+print_track_timeline(tail(t3, 20))
+print_track_timeline(tail(t4, 20))
+```
+
+In `t1` only two objects are tracked over the experiment lifetime. In `t3` 16 
+objects are tracked and in `t4` 52 objects are tracked. So by increasing 
+movement speed of the tracked objects generated tracks seemingly increase 
+which points in the direction of a worsening tracking quality on increasing 
+speed.  
+  
+Since `t1`, `t3` and `t4` are all single-item experiments, the tracker works 
+optimally when there is exactly one track in the state. Otherwise:
+
+ - Less than one track means that the tracker doesn't track enough things (likely due to not receiving enough consecutive detections)
+ - More than one track means that the tracker tracks too many things (likely due to ghost detections, location prediction failure causing track fragmentations or unsuccesful flip-flop protections causing track fragmentation)
+
+Here we graphically represent the amount of tracks in the status we have 
+confirmed over the three different measurents
+
+```{r}
+ggplot(confirmed_tracks_over_time(t1), aes(x = timestamp_ms,
+                         y = confirmed_tracks)) +
+  geom_line() +
+  scale_y_continuous(breaks = scales::breaks_width(1)) +
+  labs(
+    title = "Previously confirmed tracks over time: single stationary object (t1)",
+    x = "Timestamps",
+    y = "Previously confirmed tracks in state"
+  ) +
+  theme_minimal()
+```
+
+So here as one can see tracking is *practically perfect*. At no time does the 
+tracking break and at no point does the tracker track too many objects.
+
+```{r}
+ggplot(confirmed_tracks_over_time(t3), aes(x = timestamp_ms,
+                         y = confirmed_tracks)) +
+  geom_line() +
+  scale_y_continuous(breaks = scales::breaks_width(1)) +
+  labs(
+    title = "Previously confirmed tracks over time: single slow-moving object (t3)",
+    x = "Timestamps",
+    y = "Previously confirmed tracks in state"
+  ) +
+  theme_minimal()
+```
+
+Here we see:
+
+ - A few instances of track loss
+ - On instance of more than one simultaneous track (early on, before 430000)
+ - The big track loss around 440000 is particularly large. Probably due to bad detections or environmental complications rather than mere motion-related track loss
+
+```{r}
+ggplot(confirmed_tracks_over_time(t4), aes(x = timestamp_ms,
+                         y = confirmed_tracks)) +
+  geom_line() +
+  scale_y_continuous(breaks = scales::breaks_width(1)) +
+  labs(
+    title = "Previously confirmed tracks over time: single rapid-moving object (t4)",
+    x = "Timestamps",
+    y = "Previously confirmed tracks in state"
+  ) +
+  theme_minimal()
+```
+
+Here we see:
+
+ - Many instances of track loss. A lot more frequent than in `t3`. Likely due to increased speed. So speed increase would seem to correspond to track loss frequency
+ - We four cases of double tracking. Likely caused by unsuccesful category-flip-guarding causing double tracking (these are also notably small durations, which supports this theory!!) These too seems to increase in frequency as speed grows.
+
+  
+
+I also want to highlight instances with **seemingly obvious instances of rapid speed breaking tracking**
+
+ 1. instance: measurement 4, timestamps 18433 to 19308 (inclusive)
+
+```{r}
+print_track_timeline(t4[92:99])
+```
+
+*#10* and *#11* are likely the same object:
+
+ - both detected as bowls
+ - there is only one real-life object we attempt to track in `t4`
+ - here's how the timeline likely went:
+   1. Tracker gets new location for object *#10* at $18682$. New velocity calculation made, new location predicition made.
+   2. No detections at $18807$, therefore *#10* marked `TEMPORARILY_MISSING`
+   3. New detection at $18931$, doesn't match `LOOSE_MATCH_DISTANCE_PX`, (possibly not even `BACKUP_MATCH_DISTANCE_PX`), therefore it is marked as a new track even though it matches the category of *#10*
+
+Us not being able to match the new detection at $18931$ to the prediction 
+produced at $18682$ is a consequence of the following things:
+
+ - the missing frame at $18807$
+   - which if we assume this movement happens at a large velocity itself points to the hypothesis that the tracker is less reliable when the speed increases (due to worse detections)
+ - an inaccurate prediction
+   - due to us not being able to update location & velocity estimations at $18807$
+   - or maybe the matching distances are too tight for a high velocity
+   - or maybe acceleration/slowdown makes the predictions themselves wrong.
+
+But to see how true our hypothesis is by looking at the trajectories of these 
+tracks:
+
+```{r}
+plot_track_trajectories(t4[92:99])
+```
+
+So here the hypothesis that only rapid speed broke the tracking can be 
+discarded, since *#11* does not correspond to the direction *#10* was moving. 
+Since *#11* is only detected for a single frame, this is likely a ghost.
