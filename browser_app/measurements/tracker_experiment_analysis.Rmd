@@ -593,3 +593,29 @@ plot_track_trajectories(t4[92:99])
 So here the hypothesis that only rapid speed broke the tracking can be 
 discarded, since *#11* does not correspond to the direction *#10* was moving. 
 Since *#11* is only detected for a single frame, this is likely a ghost.
+
+ 2. instance: measurement 4, timestamps 35443 to 36193 (inclusive)
+
+```{r}
+print_track_timeline(t4[228:234])
+```
+
+By the same logic as above (all items are bowls, only one real life item is 
+being moved in front of the camera), we make the same assumption here too 
+(*#23*, *#24* and *#25* are the same item, which is given three different 
+`instanceID`s due to the real world item "outrunning" the tracker's 
+loose/backup matching treshold). Once again let us draw the trajectories of 
+the tracked items in this pre-specified timeframe:
+
+
+```{r}
+plot_track_trajectories(t4[228:234])
+```
+
+It is highly unlikely that all three tracks *#23*, *#24* and *#25* would be 
+the same object, since this would require notable accelerations and direction 
+changes in a few frames' timespan. However, notably *#25* roughly matches the 
+direction *#23* was travelling towards so this may or may not be an actual 
+case of a failed match (note: *#23* is still being tracked when *#25* appears) 
+but at least *#24* is a ghost making these instances too not so obviously a 
+case of tracking broken by rapid movement speed.
