@@ -261,7 +261,7 @@ plot_track_trajectories <- function(records, width = 640, height = 480) {
         color = track_id
       ),
       arrow = grid::arrow(
-        length = grid::unit(0.15, "inches"),
+        length = grid::unit(0.1, "inches"),
         type = "closed"
       ),
       linewidth = 0.8,
@@ -618,4 +618,45 @@ changes in a few frames' timespan. However, notably *#25* roughly matches the
 direction *#23* was travelling towards so this may or may not be an actual 
 case of a failed match (note: *#23* is still being tracked when *#25* appears) 
 but at least *#24* is a ghost making these instances too not so obviously a 
-case of tracking broken by rapid movement speed.
+case of tracking broken by rapid movement speed.  
+  
+Both highlighted "seemingly obvious examples" of tracking being broken due to 
+rapid speeds actually seem to be examples of ghost tracks breaking tracking 
+instead. Still, I believe 52 total tracks on rapid speed vs 16 on slow speed 
+vs 2 on standing still is an indicator that rapid speed is an issue. Lastly I 
+want to look at the following part of `t4` where **tracking seems to break due 
+to flip-flop handling failing: 
+
+```{r}
+print_track_timeline(t4[177:185])
+```
+
+Here: Assuming that *#18* and *#19* is the same item: 
+
+ - It first gets tracked on `t4[178]`, getting the instanceID *#18* and being recognized as a *bowl*
+ - On `t4[179]` we see a new knife given an instanceID *#19* while *#18* goes missing
+ - On `t4[180]` *#18* (bowl) reappears and *#19* (knife) disappears
+ - *#19* (knife) is only ever seen on one frame, and *#18* gets confirmed and properly tracked after the prolonged confirmation period caused by it going missing on frame `t4[179]`
+
+If *#18* and *#19* truely are the same item:
+
+ - `t4[179]` is a flip-flop (an item previously detected as a bowl now detected as a knife)
+ - The instanceID *#19* is given due to the detection at `t4[179]` falling outside of `LOOSE_MATCH_DISTANCE_PX` (possibly even `BACKUP_MATCH_DISTANCE_PX`)
+ - At `t4[179]` *#18* has only ever been detected one time meaning that we have no basis for velocity calculation & location prediction due to a lack of history & we only have a single known category from a single known detection; This situation is hard to guard against even if we confirm this is a case of flip-flopping due to rapid speed
+
+Let's look at the actual trajectories at `t4[177:185]`:
+
+```{r}
+plot_track_trajectories(t4[177:185])
+```
+
+Okay soo looking at the evidence; Once again we seem to see a ghost detection 
+due to how inconsistant the position of *#19* is compered to the rest of the 
+data points of *#18*. Considering that the *#19* detection comes between the 
+first and the second *#18* detection, we'd expect any flip-flop to be at 
+around $(360,180)$. So all our concrete examples seem to be ghost detections 
+rather than obvious examples of rapid speed breaking tracking (flip-flop 
+protection or tracking logic breaking), but still the 52 vs 16 vs 2 total 
+tracks clearly shows that the system does have issues with rapid speeds. It's 
+just, we seemingly see more ghosts at rapid speeds rather than some logical 
+component not working.
