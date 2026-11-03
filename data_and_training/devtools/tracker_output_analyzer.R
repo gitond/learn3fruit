@@ -71,16 +71,35 @@ draw_frame <- function(frame_json) {
     })
   )
 
+  if (is.null(history)) {
+    history <- data.frame(
+      x = numeric(),
+      y = numeric(),
+      instanceId = character(),
+      category = character(),
+      order = integer()
+    )
+  }
+
   # Ensure every category in this frame has a persistent color
   if (!is.null(history) && nrow(history) > 0) {
     get_category_color(history$category)
   }
 
   # Build segments from each historical point to the next.
-  arrows <- if (!is.null(history) && nrow(history) > 0) {
-    do.call(
-      rbind,
-      lapply(split(history, history$instanceId), function(track_history) {
+  arrows <- data.frame(
+    x = numeric(),
+    y = numeric(),
+    xend = numeric(),
+    yend = numeric(),
+    category = character(),
+    instanceId = character()
+  )
+
+  if (!is.null(history) && nrow(history) > 0) {
+    arrow_parts <- lapply(
+      split(history, history$instanceId),
+      function(track_history) {
         track_history <- track_history[order(track_history$order), ]
 
         if (nrow(track_history) < 2) {
@@ -95,10 +114,14 @@ draw_frame <- function(frame_json) {
           category = tail(track_history$category, -1),
           instanceId = track_history$instanceId[-nrow(track_history)]
         )
-      })
+      }
     )
-  } else {
-    NULL
+
+    arrow_parts <- Filter(Negate(is.null), arrow_parts)
+
+    if (length(arrow_parts) > 0) {
+      arrows <- do.call(rbind, arrow_parts)
+    }
   }
 
   label_positions <- if (!is.null(history) && nrow(history) > 0) {
@@ -522,13 +545,22 @@ ui <- fluidPage(
         display: grid;
         grid-template-rows: 45px minmax(0, 1fr) 180px;
         gap: 10px;
+        align-content: stretch;
+      }
+
+      .container-fluid::before,
+      .container-fluid::after {
+        display: none;
       }
 
       .app-header {
+        height: 45px;
+        overflow: hidden;
         min-height: 0;
       }
 
       .main-layout {
+        height: 100%;
         min-height: 0;
         display: grid;
         grid-template-columns: 2.2fr 1fr;
@@ -536,7 +568,8 @@ ui <- fluidPage(
       }
 
       .tracker-panel,
-      .side-panel {
+      .side-panel,
+      .presence-panel {
         min-width: 0;
         min-height: 0;
       }
@@ -600,9 +633,11 @@ ui <- fluidPage(
         tableOutput("comparison_table")
       ),
 
-      div(
-        class = "controls-panel",
-        h4("Navigation / controls")
+      div(class = "controls-panel",
+        h4("Navigation / controls"),
+        actionButton("previous_frame", "Previous"),
+        actionButton("next_frame", "Next"),
+        textOutput("frame_position")
       ),
 
       div(
@@ -619,15 +654,70 @@ ui <- fluidPage(
 )
 
 server <- function(input, output, session) {
-  target_sampling_fps <- 8  # Temporary value for testing
+  # Position in the frames list (R lists are 1-based).
+  selected_position <- reactiveVal(1)
 
-  output$app_title <- renderUI({
-    frame <- jsonlite::fromJSON(
-      frame_json,
-      simplifyVector = FALSE
+  observeEvent(input$previous_frame, {
+    selected_position(max(1, selected_position() - 1))
+  })
+
+  observeEvent(input$next_frame, {
+    selected_position(min(length(frame_lines), selected_position() + 1))
+  })
+
+  # Current frame as its original JSON string.
+  frame_json <- reactive({
+    frame_lines[[selected_position()]]
+  })
+
+  # Previous frame, or a synthetic empty frame before frame 0.
+  previous_frame_json <- reactive({
+    position <- selected_position()
+
+    if (position > 1) {
+      return(frame_lines[[position - 1]])
+    }
+
+    current_frame <- frames[[1]]
+    previous_timestamp <- current_frame$timestamp_ms - 1000 / target_sampling_fps
+
+    null_observation <- list(
+      record_type = "frame",
+      frame_index = -1,
+      timestamp_ms = previous_timestamp,
+      detections = list(
+        detections = list()
+      ),
+      tracker_state = list(
+        timestamp = previous_timestamp,
+        tracks = list()
+      )
     )
 
-    titlePanel(
+    as.character(jsonlite::toJSON(
+      null_observation,
+      auto_unbox = TRUE,
+      null = "null",
+      digits = NA
+    ))
+  })
+
+  output$frame_position <- renderText({
+    frame <- frames[[selected_position()]]
+
+    sprintf(
+      "Frame %s of %s",
+      frame$frame_index,
+      length(frames)
+    )
+  })
+
+  #target_sampling_fps <- 8  # Temporary value for testing
+
+  output$app_title <- renderUI({
+    frame <- frames[[selected_position()]]
+
+    h3(
       sprintf(
         "Tracker Inspector - frame %s @ %s ms",
         frame$frame_index,
@@ -637,12 +727,12 @@ server <- function(input, output, session) {
   })
 
   output$tracker_plot <- renderPlot({
-    draw_frame(frame_json)    
+    draw_frame(frame_json())    
   }, res = 96)
 
   output$presence_plot <- renderPlot({
     draw_presence_timeline(
-      frame_json,
+      frame_json(),
       target_sampling_fps = target_sampling_fps,
       window = 10
     )
@@ -651,8 +741,8 @@ server <- function(input, output, session) {
   output$comparison_table <- renderTable(
     {
       result <- calculate_detection_track_comparisons(
-        frame_json,
-        previous_frame_json
+        frame_json(),
+        previous_frame_json()
       )
 
       as.data.frame(result, stringsAsFactors = FALSE)
@@ -674,7 +764,38 @@ if (!file.exists(jsonl_path)) {
   stop("File not found: ", jsonl_path)
 }
 
+# Keep the original lines so frame JSON can be passed through unchanged.
+jsonl_lines <- readLines(
+  jsonl_path,
+  warn = FALSE,
+  encoding = "UTF-8"
+)
+
+# Properly reading the file in
 records <- read_jsonl(jsonl_path)
+
+if (length(records) < 2) {
+  stop("The JSONL file must contain metadata and at least one frame.")
+}
+
+metadata <- records[[1]]
+
+if (!identical(metadata$record_type, "metadata")) {
+  stop("The first JSONL record must be metadata.")
+}
+
+frames <- records[-1]
+frame_lines <- jsonl_lines[-1]
+
+if (!all(vapply(frames, function(x) identical(x$record_type, "frame"), logical(1)))) {
+  stop("All records after metadata must be frame records.")
+}
+
+target_sampling_fps <- metadata$target_sampling_fps
+
+if (is.null(target_sampling_fps) || target_sampling_fps <= 0) {
+  stop("Metadata must contain a positive target_sampling_fps.")
+}
 
 message("Loaded ", length(records), " JSONL records from: ", jsonl_path)
 
