@@ -14,6 +14,84 @@ read_jsonl <- function(path) {
   lapply(lines, jsonlite::fromJSON, simplifyVector = FALSE)
 }
 
+# -------------------------------------------------------------------
+# Note data helpers
+# -------------------------------------------------------------------
+
+empty_notes_data <- function() {
+  list(
+    version = 1,
+    notes = list()
+  )
+}
+
+
+get_frame_note <- function(notes_data, frame_index) {
+  if (is.null(notes_data$notes)) {
+    return(NULL)
+  }
+
+  notes_data$notes[[as.character(frame_index)]]
+}
+
+
+upsert_frame_note <- function(notes_data, note) {
+  if (is.null(notes_data$notes)) {
+    notes_data$notes <- list()
+  }
+
+  key <- as.character(note$frame_index)
+  notes_data$notes[[key]] <- note
+
+  notes_data
+}
+
+
+delete_frame_note <- function(notes_data, frame_index) {
+  key <- as.character(frame_index)
+
+  if (!is.null(notes_data$notes)) {
+    notes_data$notes[[key]] <- NULL
+  }
+
+  notes_data
+}
+
+
+parse_track_ids <- function(value) {
+  value <- trimws(value)
+
+  if (is.null(value) || !nzchar(value)) {
+    return(integer(0))
+  }
+
+  parts <- trimws(strsplit(value, ",", fixed = TRUE)[[1]])
+
+  if (any(!grepl("^[0-9]+$", parts))) {
+    stop("Enter track IDs as comma-separated integers, e.g. 1, 3.")
+  }
+
+  ids <- suppressWarnings(as.numeric(parts))
+
+  if (any(!is.finite(ids)) ||
+      any(ids > .Machine$integer.max)) {
+    stop("One or more track IDs are outside the supported integer range.")
+  }
+
+  as.integer(ids)
+}
+
+
+format_track_ids <- function(track_ids) {
+  if (is.null(track_ids) || length(track_ids) == 0) {
+    return("")
+  }
+
+  paste(track_ids, collapse = ", ")
+}
+
+# -------------------------------------------------------------------
+
 # Persistent mapping: new categories receive new colors as they appear.
 get_category_color <- function(category) {
   for (value in unique(category)) {
@@ -609,6 +687,53 @@ ui <- fluidPage(
       .app-header h2 {
         margin: 5px 0;
       }
+
+      /* Issue reporting panel */
+
+      .reporting-panel {
+        overflow-y: auto;
+        padding-right: 3px;
+      }
+
+      .reporting-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        margin-bottom: 6px;
+      }
+
+      .reporting-header h4 {
+        margin: 4px 0;
+        white-space: nowrap;
+      }
+
+      .reporting-actions {
+        display: flex;
+        gap: 5px;
+      }
+
+      .reporting-panel .form-group {
+        margin-bottom: 5px;
+      }
+
+      .reporting-panel label {
+        margin-bottom: 2px;
+        font-size: 12px;
+      }
+
+      .reporting-panel .form-control {
+        padding: 4px 7px;
+        font-size: 13px;
+        height: 30px;
+      }
+
+      .reporting-panel textarea.form-control {
+        height: 48px;
+        min-height: 48px;
+        resize: vertical;
+      }
+
     "))
   ),
 
@@ -640,10 +765,76 @@ ui <- fluidPage(
         textOutput("frame_position")
       ),
 
-      div(
-        class = "reporting-panel",
-        h4("Issue reporting")
+      div(class = "reporting-panel",
+
+        div(class = "reporting-header",
+          h4("Issue reporting"),
+
+          div(class = "reporting-actions",
+            actionButton(
+              "save_note",
+              "Save",
+              class = "btn-primary btn-sm"
+            ),
+
+            actionButton(
+              "delete_note",
+              "Delete",
+              class = "btn-danger btn-sm"
+            )
+          )
+        ),
+
+        selectInput(
+          "note_category",
+          "Issue category",
+          choices = c(
+            "Select a category" = "",
+            "Tracking discontinuity" = "tracking_discontinuity",
+            "Ghost detection" = "ghost_detection",
+            "Confirmation filter" = "confirmation_filter",
+            "Category flipping" = "category_flip",
+            "Matching failure" = "matching_failure",
+            "Other" = "other"
+          ),
+          selected = "",
+          width = "100%"
+        ),
+
+
+        textInput(
+          "note_track_ids",
+          "Affected track IDs",
+          value = "",
+          placeholder = "e.g. 1, 3"
+        ),
+
+        textAreaInput(
+          "note_observation",
+          "Observation",
+          value = "",
+          rows = 2,
+          width = "100%"
+        ),
+
+        textAreaInput(
+          "note_suspected_cause",
+          "Suspected cause",
+          value = "",
+          rows = 2,
+          width = "100%"
+        ),
+
+        textAreaInput(
+          "note_additional_notes",
+          "Additional notes",
+          value = "",
+          rows = 2,
+          width = "100%"
+        ),
+
       )
+
     )
   ),
 
@@ -656,6 +847,261 @@ ui <- fluidPage(
 server <- function(input, output, session) {
   # Position in the frames list (R lists are 1-based).
   selected_position <- reactiveVal(1)
+
+  # -------------------------------------------------------------------
+  # Note state
+  # -------------------------------------------------------------------
+
+  notes_data <- reactiveVal(empty_notes_data())
+
+  # -------------------------------------------------------------------
+  # Load the note belonging to the selected frame into the editor
+  # -------------------------------------------------------------------
+
+  observeEvent(selected_position(), {
+
+    frame <- frames[[selected_position()]]
+
+    note <- get_frame_note(
+      notes_data(),
+      frame$frame_index
+    )
+
+    if (is.null(note)) {
+
+      updateSelectInput(
+        session,
+        "note_category",
+        selected = ""
+      )
+
+      updateTextInput(
+        session,
+        "note_track_ids",
+        value = ""
+      )
+
+      updateTextAreaInput(
+        session,
+        "note_observation",
+        value = ""
+      )
+
+      updateTextAreaInput(
+        session,
+        "note_suspected_cause",
+        value = ""
+      )
+
+      updateTextAreaInput(
+        session,
+        "note_additional_notes",
+        value = ""
+      )
+
+    } else {
+
+      updateSelectInput(
+        session,
+        "note_category",
+        selected = note$category
+      )
+
+      updateTextInput(
+        session,
+        "note_track_ids",
+        value = format_track_ids(note$track_ids)
+      )
+
+      updateTextAreaInput(
+        session,
+        "note_observation",
+        value = note$observation
+      )
+
+      updateTextAreaInput(
+        session,
+        "note_suspected_cause",
+        value = note$suspected_cause
+      )
+
+      updateTextAreaInput(
+        session,
+        "note_additional_notes",
+        value = note$additional_notes
+      )
+
+    }
+
+  }, ignoreInit = FALSE)
+
+  # -------------------------------------------------------------------
+  # Save or update the note for the selected frame
+  # -------------------------------------------------------------------
+
+  observeEvent(input$save_note, {
+
+    frame <- frames[[selected_position()]]
+
+    # Validate category
+
+    valid_categories <- c(
+      "tracking_discontinuity",
+      "ghost_detection",
+      "confirmation_filter",
+      "category_flip",
+      "matching_failure",
+      "other"
+    )
+
+    category <- input$note_category
+
+    if (is.null(category) || 
+      !category %in% valid_categories) {
+
+        showNotification(
+          "Select an issue category.",
+          type = "warning"
+        )
+
+        return()
+    }
+
+    # Validate and parse track IDs
+
+    track_ids <- tryCatch(
+      parse_track_ids(input$note_track_ids),
+      error = function(e) {
+        showNotification(
+          conditionMessage(e),
+          type = "error"
+        )
+        NULL
+      }
+    )
+
+    if (is.null(track_ids)) {
+      return()
+    }
+
+    # Observation is required
+
+    observation <- trimws(input$note_observation)
+
+    if (is.null(observation) || !nzchar(observation)) {
+
+      showNotification(
+        "Please enter an observation.",
+        type = "warning"
+      )
+
+      return()
+    }
+
+    # Construct the note
+
+    note <- list(
+      frame_index = frame$frame_index,
+      timestamp_ms = frame$timestamp_ms,
+      category = category,
+      track_ids = track_ids,
+      observation = observation,
+      suspected_cause = input$note_suspected_cause,
+      additional_notes = input$note_additional_notes
+   )
+
+   # Insert or replace the note for this frame
+
+   notes_data(
+     upsert_frame_note(
+       notes_data(),
+       note
+     )
+   )
+
+   showNotification(
+     sprintf(
+       "Note updated for frame %s.",
+       frame$frame_index
+     ),
+     type = "message"
+   )
+
+  }, ignoreInit = TRUE)
+
+  # -------------------------------------------------------------------
+  # Delete the note belonging to the selected frame
+  # -------------------------------------------------------------------
+
+  observeEvent(input$delete_note, {
+
+    frame <- frames[[selected_position()]]
+
+    existing_note <- get_frame_note(
+      notes_data(),
+      frame$frame_index
+    )
+
+    if (is.null(existing_note)) {
+
+      showNotification(
+        "There is no note to delete for this frame.",
+        type = "warning"
+      )
+
+      return()
+    }
+
+    notes_data(
+      delete_frame_note(
+        notes_data(),
+        frame$frame_index
+      )
+    )
+
+    # Clear the editor
+
+    updateSelectInput(
+      session,
+      "note_category",
+      selected = ""
+    )
+
+    updateTextInput(
+      session,
+      "note_track_ids",
+      value = ""
+    )
+
+    updateTextAreaInput(
+      session,
+      "note_observation",
+      value = ""
+    )
+
+    updateTextAreaInput(
+      session,
+      "note_suspected_cause",
+      value = ""
+    )
+
+    updateTextAreaInput(
+      session,
+      "note_additional_notes",
+      value = ""
+    )
+
+    showNotification(
+      sprintf(
+        "Note deleted for frame %s.",
+        frame$frame_index
+      ),
+      type = "message"
+    )
+
+  }, ignoreInit = TRUE)
+
+  # -------------------------------------------------------------------
 
   observeEvent(input$previous_frame, {
     selected_position(max(1, selected_position() - 1))
