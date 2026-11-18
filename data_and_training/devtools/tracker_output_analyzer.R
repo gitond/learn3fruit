@@ -91,6 +91,334 @@ format_track_ids <- function(track_ids) {
 }
 
 # -------------------------------------------------------------------
+# Note serialization and persistence
+# -------------------------------------------------------------------
+
+valid_note_categories <- c(
+  "tracking_discontinuity",
+  "ghost_detection",
+  "confirmation_filter",
+  "category_flip",
+  "matching_failure",
+  "other"
+)
+
+
+validate_notes_data <- function(notes_data) {
+
+  if (!is.list(notes_data)) {
+    stop("Notes data must be an R list.")
+  }
+
+  if (!identical(as.numeric(notes_data$version), 1)) {
+    stop("Unsupported notes data version.")
+  }
+
+  notes <- notes_data$notes
+
+  if (!is.list(notes)) {
+    stop("The notes collection must be an object.")
+  }
+
+  if (length(notes) > 0) {
+
+    note_keys <- names(notes)
+
+    if (is.null(note_keys) ||
+        anyNA(note_keys) ||
+        any(!nzchar(note_keys)) ||
+        anyDuplicated(note_keys)) {
+      stop("Every note must have a unique frame_index key.")
+    }
+  }
+
+  normalized_notes <- list()
+
+  for (key in names(notes)) {
+
+    note <- notes[[key]]
+
+    required_fields <- c(
+      "frame_index",
+      "timestamp_ms",
+      "category",
+      "track_ids",
+      "observation",
+      "suspected_cause",
+      "additional_notes"
+    )
+
+    if (!is.list(note) ||
+        !all(required_fields %in% names(note))) {
+      stop("Note ", key, " is missing required fields.")
+    }
+
+    frame_index <- note$frame_index
+    timestamp_ms <- note$timestamp_ms
+
+    if (length(frame_index) != 1 ||
+        !is.numeric(frame_index) ||
+        !is.finite(frame_index) ||
+        frame_index != floor(frame_index)) {
+      stop("Note ", key, " has an invalid frame_index.")
+    }
+
+    if (!identical(key, as.character(frame_index))) {
+      stop("Note key does not match its frame_index: ", key)
+    }
+
+    if (length(timestamp_ms) != 1 ||
+        !is.numeric(timestamp_ms) ||
+        !is.finite(timestamp_ms)) {
+      stop("Note ", key, " has an invalid timestamp_ms.")
+    }
+
+    category <- note$category
+
+    if (!is.character(category) ||
+        length(category) != 1 ||
+        is.na(category) ||
+        !category %in% valid_note_categories) {
+      stop("Note ", key, " has an invalid category.")
+    }
+
+    track_ids <- unlist(note$track_ids, use.names = FALSE)
+
+    if (length(track_ids) > 0) {
+
+      if (!is.numeric(track_ids) ||
+          any(!is.finite(track_ids)) ||
+          any(track_ids < 0) ||
+          any(track_ids != floor(track_ids)) ||
+          any(track_ids > .Machine$integer.max)) {
+        stop("Note ", key, " has invalid track IDs.")
+      }
+
+      track_ids <- as.integer(track_ids)
+
+    } else {
+      track_ids <- integer(0)
+    }
+
+    text_fields <- c(
+      "observation",
+      "suspected_cause",
+      "additional_notes"
+    )
+
+    for (field in text_fields) {
+
+      value <- note[[field]]
+
+      if (!is.character(value) ||
+          length(value) != 1 ||
+          is.na(value)) {
+        stop("Note ", key, " has an invalid ", field, " field.")
+      }
+    }
+
+    normalized_notes[[key]] <- list(
+      frame_index = as.integer(frame_index),
+      timestamp_ms = timestamp_ms,
+      category = category,
+      track_ids = track_ids,
+      observation = note$observation,
+      suspected_cause = note$suspected_cause,
+      additional_notes = note$additional_notes
+    )
+  }
+
+  list(
+    version = 1,
+    notes = normalized_notes
+  )
+}
+
+
+serialize_notes_data <- function(notes_data) {
+
+  notes_data <- validate_notes_data(notes_data)
+
+  # Convert track IDs to lists so even a single ID serializes
+  # as a JSON array rather than a scalar.
+
+  notes_for_json <- lapply(
+    notes_data$notes,
+    function(note) {
+      note$track_ids <- as.list(note$track_ids)
+      note
+    }
+  )
+
+  # An empty named collection must be represented as a JSON object.
+  # jsonlite would otherwise represent an empty R list as [].
+
+  notes_json <- if (length(notes_for_json) == 0) {
+    "{}"
+  } else {
+    as.character(jsonlite::toJSON(
+      notes_for_json,
+      auto_unbox = TRUE,
+      null = "null",
+      digits = NA
+    ))
+  }
+
+  paste0(
+    '{"version":1,"notes":',
+    notes_json,
+    '}'
+  )
+}
+
+
+deserialize_notes_data <- function(custom_notes) {
+
+  if (!is.character(custom_notes) ||
+      length(custom_notes) != 1 ||
+      is.na(custom_notes)) {
+    stop("metadata$custom_notes must contain a JSON string.")
+  }
+
+  # The initial schema value means no notes have been saved yet.
+
+  if (!nzchar(trimws(custom_notes))) {
+    return(empty_notes_data())
+  }
+
+  parsed <- tryCatch(
+    jsonlite::fromJSON(
+      custom_notes,
+      simplifyVector = FALSE
+    ),
+    error = function(e) {
+      stop(
+        "Could not parse metadata$custom_notes: ",
+        conditionMessage(e)
+      )
+    }
+  )
+
+  validate_notes_data(parsed)
+}
+
+
+replace_file_safely <- function(temp_path, original_path) {
+
+  # On systems where rename can replace an existing file,
+  # this performs the replacement directly.
+
+  if (file.rename(temp_path, original_path)) {
+    return(invisible(TRUE))
+  }
+
+  # Some systems, notably Windows, may not allow this.
+  # Move the original aside, then attempt the replacement.
+
+  backup_path <- tempfile(
+    pattern = paste0(".", basename(original_path), ".backup-"),
+    tmpdir = dirname(original_path)
+  )
+
+  if (!file.rename(original_path, backup_path)) {
+    stop("Could not move the original measurement file aside.")
+  }
+
+  if (!file.rename(temp_path, original_path)) {
+
+    restored <- file.rename(backup_path, original_path)
+
+    if (!restored) {
+      stop(
+        "Replacement failed, and the original file could not ",
+        "be restored. Original backup: ",
+        backup_path
+      )
+    }
+
+    stop("Could not replace the original measurement file.")
+  }
+
+  unlink(backup_path)
+
+  invisible(TRUE)
+}
+
+
+save_notes <- function(path, metadata, notes_data, frame_lines) {
+
+  if (!file.exists(path)) {
+    stop("Measurement file does not exist: ", path)
+  }
+
+  if (!is.list(metadata)) {
+    stop("Metadata must be an R list.")
+  }
+
+  # Validate and serialize the notes before touching the file.
+
+  notes_json <- serialize_notes_data(notes_data)
+
+  # Change only custom_notes in the metadata object.
+
+  updated_metadata <- metadata
+  updated_metadata$custom_notes <- notes_json
+
+  metadata_line <- as.character(jsonlite::toJSON(
+    updated_metadata,
+    auto_unbox = TRUE,
+    null = "null",
+    digits = NA
+  ))
+
+  # Create the temporary file in the same directory to keep
+  # the replacement on the same filesystem.
+
+  temp_path <- tempfile(
+    pattern = paste0(".", basename(path), ".tmp-"),
+    tmpdir = dirname(path)
+  )
+
+  on.exit({
+    if (file.exists(temp_path)) {
+      unlink(temp_path)
+    }
+  }, add = TRUE)
+
+  # Reuse the original frame JSON strings without parsing them.
+
+  output_lines <- c(metadata_line, frame_lines)
+
+  writeLines(
+    output_lines,
+    con = temp_path,
+    useBytes = TRUE
+  )
+
+  if (!file.exists(temp_path)) {
+    stop("Temporary measurement file was not created.")
+  }
+
+  # Verify the written contents before replacing the original.
+
+  verification_lines <- readLines(
+    temp_path,
+    warn = FALSE,
+    encoding = "UTF-8"
+  )
+
+  if (!identical(verification_lines, output_lines)) {
+    stop("Temporary file verification failed. Original file was not replaced.")
+  }
+
+  # Replace the original only after successful writing and verification.
+
+  replace_file_safely(temp_path, path)
+
+  updated_metadata
+}
+
+# -------------------------------------------------------------------
 
 # Persistent mapping: new categories receive new colors as they appear.
 get_category_color <- function(category) {
@@ -852,7 +1180,8 @@ server <- function(input, output, session) {
   # Note state
   # -------------------------------------------------------------------
 
-  notes_data <- reactiveVal(empty_notes_data())
+  notes_data <- reactiveVal(initial_notes)
+  metadata_state <- reactiveVal(metadata)
 
   # -------------------------------------------------------------------
   # Load the note belonging to the selected frame into the editor
@@ -936,28 +1265,17 @@ server <- function(input, output, session) {
   }, ignoreInit = FALSE)
 
   # -------------------------------------------------------------------
-  # Save or update the note for the selected frame
+  # Save the current note and persist all notes to the JSONL file
   # -------------------------------------------------------------------
 
   observeEvent(input$save_note, {
 
     frame <- frames[[selected_position()]]
 
-    # Validate category
-
-    valid_categories <- c(
-      "tracking_discontinuity",
-      "ghost_detection",
-      "confirmation_filter",
-      "category_flip",
-      "matching_failure",
-      "other"
-    )
-
     category <- input$note_category
 
-    if (is.null(category) || 
-      !category %in% valid_categories) {
+    if (is.null(category) ||
+      !category %in% valid_note_categories) {
 
         showNotification(
           "Select an issue category.",
@@ -966,8 +1284,6 @@ server <- function(input, output, session) {
 
         return()
     }
-
-    # Validate and parse track IDs
 
     track_ids <- tryCatch(
       parse_track_ids(input$note_track_ids),
@@ -984,8 +1300,6 @@ server <- function(input, output, session) {
       return()
     }
 
-    # Observation is required
-
     observation <- trimws(input$note_observation)
 
     if (is.null(observation) || !nzchar(observation)) {
@@ -998,8 +1312,6 @@ server <- function(input, output, session) {
       return()
     }
 
-    # Construct the note
-
     note <- list(
       frame_index = frame$frame_index,
       timestamp_ms = frame$timestamp_ms,
@@ -1008,29 +1320,56 @@ server <- function(input, output, session) {
       observation = observation,
       suspected_cause = input$note_suspected_cause,
       additional_notes = input$note_additional_notes
-   )
+    )
 
-   # Insert or replace the note for this frame
+    # Prepare the updated collection without changing reactive state yet.
 
-   notes_data(
-     upsert_frame_note(
-       notes_data(),
-       note
-     )
-   )
+    updated_notes <- upsert_frame_note(
+      notes_data(),
+      note
+    )
 
-   showNotification(
-     sprintf(
-       "Note updated for frame %s.",
-       frame$frame_index
-     ),
-     type = "message"
-   )
+    # Persist the complete collection.
+    updated_metadata <- tryCatch(
+      save_notes(
+        path = jsonl_path,
+        metadata = metadata_state(),
+        notes_data = updated_notes,
+        frame_lines = frame_lines
+      ),
+      error = function(e) {
+
+        showNotification(
+          paste("Could not save notes:", conditionMessage(e)),
+          type = "error",
+          duration = NULL
+        )
+
+        NULL
+      }
+    )
+
+    # Update in-memory state only after successful persistence.
+
+    if (is.null(updated_metadata)) {
+      return()
+    }
+
+    notes_data(updated_notes)
+    metadata_state(updated_metadata)
+
+    showNotification(
+      sprintf(
+        "Note saved to measurement file (frame %s).",
+        frame$frame_index
+      ),
+      type = "message"
+    )
 
   }, ignoreInit = TRUE)
 
   # -------------------------------------------------------------------
-  # Delete the note belonging to the selected frame
+  # Delete the current note and persist all notes to the JSONL file
   # -------------------------------------------------------------------
 
   observeEvent(input$delete_note, {
@@ -1052,12 +1391,42 @@ server <- function(input, output, session) {
       return()
     }
 
-    notes_data(
-      delete_frame_note(
-        notes_data(),
-        frame$frame_index
-      )
+    # Prepare the updated collection without changing reactive state yet.
+
+    updated_notes <- delete_frame_note(
+      notes_data(),
+      frame$frame_index
     )
+
+    # Persist the deletion.
+
+    updated_metadata <- tryCatch(
+      save_notes(
+        path = jsonl_path,
+        metadata = metadata_state(),
+        notes_data = updated_notes,
+        frame_lines = frame_lines
+      ),
+      error = function(e) {
+
+        showNotification(
+          paste("Could not delete note:", conditionMessage(e)),
+          type = "error",
+          duration = NULL
+        )
+
+        NULL
+      }
+    )
+
+    # Only commit the deletion in memory after successful persistence.
+
+    if (is.null(updated_metadata)) {
+      return()
+    }
+
+    notes_data(updated_notes)
+    metadata_state(updated_metadata)
 
     # Clear the editor
 
@@ -1093,7 +1462,7 @@ server <- function(input, output, session) {
 
     showNotification(
       sprintf(
-        "Note deleted for frame %s.",
+        "Note deleted from measurement file (frame %s).",
         frame$frame_index
       ),
       type = "message"
@@ -1242,6 +1611,16 @@ target_sampling_fps <- metadata$target_sampling_fps
 if (is.null(target_sampling_fps) || target_sampling_fps <= 0) {
   stop("Metadata must contain a positive target_sampling_fps.")
 }
+
+# -------------------------------------------------------------------
+# Load annotation data from metadata
+# -------------------------------------------------------------------
+
+if (!"custom_notes" %in% names(metadata)) {
+  stop("Metadata is missing the required custom_notes field.")
+}
+
+initial_notes <- deserialize_notes_data(metadata$custom_notes)
 
 message("Loaded ", length(records), " JSONL records from: ", jsonl_path)
 
